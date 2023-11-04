@@ -8,4 +8,3 @@ References to this [link](https://huggingface.co/sentence-transformers/all-MiniL
 
 # Retriever used in this project
 - [Parent Document Retriever](https://python.langchain.com/docs/modules/data_connection/retrievers/parent_document_retriever), which is a subclass of `MultiVectorRetriever`
-

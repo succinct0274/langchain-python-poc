@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
-from typing import Annotated, List
-from fastapi import FastAPI, Form, UploadFile, File, HTTPException
+from typing import Annotated, List, Union
+from fastapi import FastAPI, Form, UploadFile, File, HTTPException, Header
 from app.services.langchain.model import get_langchain_model
 from langchain.embeddings.openai import OpenAIEmbeddings
 from langchain.agents import Tool, AgentExecutor, BaseMultiActionAgent
@@ -17,11 +17,13 @@ from langchain.retrievers import ContextualCompressionRetriever, ParentDocumentR
 from langchain.embeddings import HuggingFaceEmbeddings
 from langchain.storage.in_memory import InMemoryStore
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.memory import ConversationBufferMemory, ConversationKGMemory
+from langchain.memory import ConversationBufferMemory, ConversationKGMemory, ConversationSummaryBufferMemory
 from langchain.chains import ConversationalRetrievalChain
 from langchain.llms.huggingface_pipeline import HuggingFacePipeline
-from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline, MT5ForConditionalGeneration
+from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
 from langchain.schema import Document
+import uuid
+
 
 router = APIRouter(
     prefix='/langchains',
@@ -43,20 +45,19 @@ def _process_pdf_files(files: List[UploadFile]) -> List[Document]:
         for doc in docs:
             if 'doc_in' in doc.metadata:
                 continue
-            import uuid
             doc.metadata['doc_id'] = str(uuid.uuid4())
         documents.extend(docs)
     
     return documents
 
 @router.post('/conversate')
-async def conversate(question: Annotated[str, Form()], files: Annotated[List[UploadFile], File()], llm=Depends(get_langchain_model)):
+async def conversate(question: Annotated[str, Form()], files: Annotated[List[UploadFile], File()], x_conversation_reference_number: Annotated[Union[str, None], Header()]=None,llm=Depends(get_langchain_model)):
     content_types = set([file.content_type for file in files])
     supported = content_types.issubset(supported_docuemnt_types)
     if not supported:
         raise HTTPException(status_code=400, detail='Unsupported document type')
-    documents = _process_pdf_files(files)
 
+    documents = _process_pdf_files(files)
     # Make vector store asynchronous
     hf_embedding = HuggingFaceEmbeddings(
         model_name='sentence-transformers/all-MiniLM-L6-v2',
@@ -71,7 +72,8 @@ async def conversate(question: Annotated[str, Form()], files: Annotated[List[Upl
         parent_splitter=RecursiveCharacterTextSplitter(chunk_size=500),
     )
 
-    retriever.add_documents(documents, ids=[doc.metadata.doc_id for doc in documents])
+    doc_ids = [doc.metadata['doc_id'] for doc in documents]
+    retriever.add_documents(documents, ids=None)
 
     sub_docs = db.similarity_search("Ketanji Brown Jackson")
     print(sub_docs[0].page_content)
@@ -87,18 +89,23 @@ async def conversate(question: Annotated[str, Form()], files: Annotated[List[Upl
     )
     # llm = HuggingFacePipeline(pipeline=pipe)
 
+    # Instantiate the summary llm and set the max length of output to 300
+    summarization_model_name = 'pszemraj/led-large-book-summary'
+    summarization_llm = HuggingFacePipeline(pipeline=pipeline('summarization', summarization_model_name, max_length=300))
+
     qa = ConversationalRetrievalChain.from_llm(
         llm=llm, 
         retriever=retriever,
-        # memory=ConversationKGMemory(llm=llm, memory_key='chat_history', return_messages=True),
-        memory = ConversationBufferMemory(memory_key='chat_history', output_key='answer', return_messages=True),
+        # memory=ConversationKGMemory(llm=summarization_llm, memory_key='chat_history', return_messages=True),
+        memory=ConversationSummaryBufferMemory(llm=summarization_llm, input_key='chat_history', return_messages=True, verbose=True),
+        # memory = ConversationBufferMemory(memory_key='chat_history', output_key='answer', return_messages=True),
         verbose=True,
     )
     query = "What did the president say about Ketanji Brown Jackson"
     result = qa({"question": query})
     print(result)
 
-    query = 'Did he say who will be succeeded'
+    query = 'What happen to Justice Breyer'
     result = qa({'question': query})
     print(result)
     # Load documents into vector store

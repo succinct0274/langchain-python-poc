@@ -1,22 +1,36 @@
 version: '3.9'
 
 services:
-  # postgres:
-  #   image: postgres:14-alpine
-  #   ports:
-  #     - 5432:5432
-  #   volumes:
-  #     - postgres_db:/var/lib/postgresql/data
-  #   environment:
-  #     - POSTGRES_PASSWORD=postgres
-  #     - POSTGRES_USER=123456
-  #     - POSTGRES_DB=app_center
+  postgres:
+    image: postgres:14-alpine
+    ports:
+      - 5432:5432
+    volumes:
+      - postgres_db:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=123456
+      - POSTGRES_DB=app_center
   
   unstructured-api:
-    image: downloads.unstructured.io/unstructured-io/unstructured-api:latest
+    image: downloads.unstructured.io/unstructured-io/unstructured-api:0.0.56
     ports:
       - 8001:8000
+  
+  # neo4j:
+  #   image: neo4j:4.4.27-community
+  #   ports:
+  #     - 7474:7474
+  #     - 7687:7687
+  #   environment:
+  #     - NEO4J_AUTH=neo4j/pleaseletmein
+  #     - NEO4J_PLUGINS=["apoc"]
+  #   volumes:
+  #     - neo4j_db:/data
 
-# volumes:
-  # postgres_db:
-    
+volumes:
+  neo4j_db:
+    driver: local
+
+  postgres_db:
+    driver: local
