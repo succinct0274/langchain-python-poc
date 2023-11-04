@@ -1,0 +1,22 @@
+version: '3.9'
+
+services:
+  # postgres:
+  #   image: postgres:14-alpine
+  #   ports:
+  #     - 5432:5432
+  #   volumes:
+  #     - postgres_db:/var/lib/postgresql/data
+  #   environment:
+  #     - POSTGRES_PASSWORD=postgres
+  #     - POSTGRES_USER=123456
+  #     - POSTGRES_DB=app_center
+  
+  unstructured-api:
+    image: downloads.unstructured.io/unstructured-io/unstructured-api:latest
+    ports:
+      - 8001:8000
+
+# volumes:
+  # postgres_db:
+    
