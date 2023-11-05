@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Depends
 from typing import Annotated, List, Union
 from fastapi import FastAPI, Form, UploadFile, File, HTTPException, Header
-from app.services.langchain.model import get_langchain_model
+from app.service.langchain.model import get_langchain_model
 from langchain.embeddings.openai import OpenAIEmbeddings
 from langchain.agents import Tool, AgentExecutor, BaseMultiActionAgent
 from langchain.utilities.serpapi import SerpAPIWrapper
-from app.services.langchain.agents.fake_agent import FakeAgent
+from app.service.langchain.agents.fake_agent import FakeAgent
 from langchain.agents.agent_types import AgentType
 from langchain_experimental.agents.agent_toolkits import create_pandas_dataframe_agent
 from langchain.document_loaders import UnstructuredAPIFileIOLoader
@@ -23,7 +23,11 @@ from langchain.llms.huggingface_pipeline import HuggingFacePipeline
 from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
 from langchain.schema import Document
 import uuid
-
+from langchain.memory.chat_message_histories import PostgresChatMessageHistory
+from app.database.crud.conversation_history import create_conversation_history
+from app.database.schema.conversation_history import ConversationHistoryCreate
+from app.database.base import SessionLocal, get_session_local
+from sqlalchemy.orm import Session
 
 router = APIRouter(
     prefix='/langchains',
@@ -49,6 +53,12 @@ def _process_pdf_files(files: List[UploadFile]) -> List[Document]:
         documents.extend(docs)
     
     return documents
+
+@router.post('/')
+async def create(db: Session=Depends(get_session_local)):
+    value = uuid.uuid4()
+    print(value)
+    create_conversation_history(db, ConversationHistoryCreate(human_message='How are you?', ai_message='I am fine. Thank you.', conversation_id=value))
 
 @router.post('/conversate')
 async def conversate(question: Annotated[str, Form()], files: Annotated[List[UploadFile], File()], x_conversation_reference_number: Annotated[Union[str, None], Header()]=None,llm=Depends(get_langchain_model)):
@@ -93,14 +103,16 @@ async def conversate(question: Annotated[str, Form()], files: Annotated[List[Upl
     summarization_model_name = 'pszemraj/led-large-book-summary'
     summarization_llm = HuggingFacePipeline(pipeline=pipeline('summarization', summarization_model_name, max_length=300))
 
+    memory = ConversationSummaryBufferMemory(llm=summarization_llm, input_key='chat_history', return_messages=True, verbose=True)
     qa = ConversationalRetrievalChain.from_llm(
         llm=llm, 
         retriever=retriever,
         # memory=ConversationKGMemory(llm=summarization_llm, memory_key='chat_history', return_messages=True),
-        memory=ConversationSummaryBufferMemory(llm=summarization_llm, input_key='chat_history', return_messages=True, verbose=True),
+        memory=memory,
         # memory = ConversationBufferMemory(memory_key='chat_history', output_key='answer', return_messages=True),
         verbose=True,
     )
+    
     query = "What did the president say about Ketanji Brown Jackson"
     result = qa({"question": query})
     print(result)

@@ -1,12 +1,15 @@
 from typing import Union
 from fastapi import FastAPI
 from dotenv import load_dotenv
-from .routers import langchains
+from .router import langchains
 import uvicorn
 import os
-
+from app.database.base import Base, SessionLocal, engine
 
 load_dotenv()
+
+Base.metadata.create_all(bind=engine)
+
 app = FastAPI()
 
 app.include_router(langchains.router)
