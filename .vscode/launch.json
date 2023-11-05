@@ -10,6 +10,7 @@
             "request": "launch",
             "module": "app.main",
             "justMyCode": false,
+            // "args": ["--reload"]
         }
     ]
 }

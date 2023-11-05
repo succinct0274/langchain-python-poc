@@ -2,7 +2,7 @@ version: '3.9'
 
 services:
   postgres:
-    image: postgres:14-alpine
+    image: ankane/pgvector:v0.5.1
     ports:
       - 5432:5432
     volumes:
@@ -10,7 +10,7 @@ services:
     environment:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=123456
-      - POSTGRES_DB=app_center
+      - POSTGRES_DB=chatbot
   
   unstructured-api:
     image: downloads.unstructured.io/unstructured-io/unstructured-api:0.0.56

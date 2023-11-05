@@ -30,6 +30,7 @@ from app.database.base import SessionLocal, get_session_local
 from sqlalchemy.orm import Session
 from fastapi import BackgroundTasks
 import logging
+from langchain.vectorstores.pgvector import PGVector, DistanceStrategy
 
 router = APIRouter(
     prefix='/langchains',
@@ -79,7 +80,8 @@ async def conversate(question: Annotated[str, Form()],
         encode_kwargs={'normalize_embeddings': False}
     )
 
-    db = Chroma(embedding_function=hf_embedding)
+    db = PGVector('postgresql://postgres:123456@localhost:5432/chatbot', embedding_function=hf_embedding, distance_strategy=DistanceStrategy.EUCLIDEAN)
+    # db = Chroma(embedding_function=hf_embedding)
     store = InMemoryStore()
     retriever = ParentDocumentRetriever(
         vectorstore=db,
