@@ -24,10 +24,12 @@ from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
 from langchain.schema import Document
 import uuid
 from langchain.memory.chat_message_histories import PostgresChatMessageHistory
-from app.database.crud.conversation_history import create_conversation_history
+from app.database.crud.conversation_history import create_conversation_history, get_conversation_historys_by_conversation_id
 from app.database.schema.conversation_history import ConversationHistoryCreate
 from app.database.base import SessionLocal, get_session_local
 from sqlalchemy.orm import Session
+from fastapi import BackgroundTasks
+import logging
 
 router = APIRouter(
     prefix='/langchains',
@@ -37,6 +39,8 @@ router = APIRouter(
 def random_word(query: str) -> str:
     print("\nNow I'm doing this!")
     return "foo"
+
+logger = logging.getLogger(__name__)
 
 supported_docuemnt_types = set(['application/pdf', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'])
 
@@ -54,26 +58,28 @@ def _process_pdf_files(files: List[UploadFile]) -> List[Document]:
     
     return documents
 
-@router.post('/')
-async def create(db: Session=Depends(get_session_local)):
-    value = uuid.uuid4()
-    print(value)
-    create_conversation_history(db, ConversationHistoryCreate(human_message='How are you?', ai_message='I am fine. Thank you.', conversation_id=value))
-
 @router.post('/conversate')
-async def conversate(question: Annotated[str, Form()], files: Annotated[List[UploadFile], File()], x_conversation_reference_number: Annotated[Union[str, None], Header()]=None,llm=Depends(get_langchain_model)):
+async def conversate(question: Annotated[str, Form()], 
+                     files: Annotated[List[UploadFile], File()], 
+                     background_tasks: BackgroundTasks,
+                     x_conversation_id: Annotated[Union[str, None], Header()]=None,
+                     llm=Depends(get_langchain_model),
+                     session: Session=Depends(get_session_local)):
     content_types = set([file.content_type for file in files])
     supported = content_types.issubset(supported_docuemnt_types)
     if not supported:
         raise HTTPException(status_code=400, detail='Unsupported document type')
 
+    # Process files uploaded into text
     documents = _process_pdf_files(files)
+
     # Make vector store asynchronous
     hf_embedding = HuggingFaceEmbeddings(
         model_name='sentence-transformers/all-MiniLM-L6-v2',
         encode_kwargs={'normalize_embeddings': False}
     )
-    db = Chroma.from_documents(documents, hf_embedding)
+
+    db = Chroma(embedding_function=hf_embedding)
     store = InMemoryStore()
     retriever = ParentDocumentRetriever(
         vectorstore=db,
@@ -82,28 +88,29 @@ async def conversate(question: Annotated[str, Form()], files: Annotated[List[Upl
         parent_splitter=RecursiveCharacterTextSplitter(chunk_size=500),
     )
 
-    doc_ids = [doc.metadata['doc_id'] for doc in documents]
+    # doc_ids = [doc.metadata['doc_id'] for doc in documents]
     retriever.add_documents(documents, ids=None)
 
-    sub_docs = db.similarity_search("Ketanji Brown Jackson")
-    print(sub_docs[0].page_content)
-
-    retrieved_docs = retriever.get_relevant_documents("Ketanji Brown Jackson")
-    print(len(retrieved_docs[0].page_content))
-
-    model_id = "Writer/palmyra-small"
-    tokenizer = AutoTokenizer.from_pretrained(model_id)
-    model = AutoModelForCausalLM.from_pretrained(model_id)
-    pipe = pipeline(
-        "text-generation", model=model, tokenizer=tokenizer, max_new_tokens=10
-    )
+    # model_id = "Writer/palmyra-small"
+    # tokenizer = AutoTokenizer.from_pretrained(model_id)
+    # model = AutoModelForCausalLM.from_pretrained(model_id)
+    # pipe = pipeline(
+    #     "text-generation", model=model, tokenizer=tokenizer, max_new_tokens=10
+    # )
     # llm = HuggingFacePipeline(pipeline=pipe)
 
     # Instantiate the summary llm and set the max length of output to 300
     summarization_model_name = 'pszemraj/led-large-book-summary'
     summarization_llm = HuggingFacePipeline(pipeline=pipeline('summarization', summarization_model_name, max_length=300))
 
-    memory = ConversationSummaryBufferMemory(llm=summarization_llm, input_key='chat_history', return_messages=True, verbose=True)
+    memory = ConversationSummaryBufferMemory(llm=summarization_llm, memory_key='chat_history', return_messages=True, verbose=True)
+
+    # Load conversation history from the database if corresponding header provided
+    if x_conversation_id is not None:
+        chat_records = get_conversation_historys_by_conversation_id(session, x_conversation_id)
+        for record in chat_records:
+            memory.save_context({'input': record.human_message}, {'output': record.ai_message})
+
     qa = ConversationalRetrievalChain.from_llm(
         llm=llm, 
         retriever=retriever,
@@ -113,13 +120,12 @@ async def conversate(question: Annotated[str, Form()], files: Annotated[List[Upl
         verbose=True,
     )
     
-    query = "What did the president say about Ketanji Brown Jackson"
-    result = qa({"question": query})
-    print(result)
+    result = qa({"question": question})
+    logger.info(f"result from openai llm: {result}")
 
-    query = 'What happen to Justice Breyer'
-    result = qa({'question': query})
-    print(result)
+    # Save current conversation message to the database
+    background_tasks.add_task(create_conversation_history, session, ConversationHistoryCreate(conversation_id=x_conversation_id, human_message=question, ai_message=result['answer']))
+
     # Load documents into vector store
     # df = pd.DataFrame()
     # panda_agent = create_pandas_dataframe_agent(
