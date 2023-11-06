@@ -91,16 +91,16 @@ async def conversate(question: Annotated[str, Form()],
                               distance_strategy=DistanceStrategy.EUCLIDEAN,
                               collection_metadata={'conversation_id': x_conversation_id})
     # db = Chroma(embedding_function=hf_embedding)
-    store = InMemoryStore()
-    retriever = ParentDocumentRetriever(
-        vectorstore=db,
-        docstore=store,
-        child_splitter=RecursiveCharacterTextSplitter(chunk_size=400),
-        parent_splitter=RecursiveCharacterTextSplitter(chunk_size=500),
-    )
+    # store = InMemoryStore()
+    # retriever = ParentDocumentRetriever(
+    #     vectorstore=db,
+    #     docstore=store,
+    #     child_splitter=RecursiveCharacterTextSplitter(chunk_size=400),
+    #     parent_splitter=RecursiveCharacterTextSplitter(chunk_size=500),
+    # )
 
     # doc_ids = [doc.metadata['doc_id'] for doc in documents]
-    retriever.add_documents(documents, ids=None)
+    # retriever.add_documents(documents, ids=None)
 
     # model_id = "Writer/palmyra-small"
     # tokenizer = AutoTokenizer.from_pretrained(model_id)
@@ -124,7 +124,7 @@ async def conversate(question: Annotated[str, Form()],
 
     qa = ConversationalRetrievalChain.from_llm(
         llm=llm, 
-        retriever=retriever,
+        retriever=db.as_retriever(),
         # memory=ConversationKGMemory(llm=summarization_llm, memory_key='chat_history', return_messages=True),
         memory=memory,
         # memory = ConversationBufferMemory(memory_key='chat_history', output_key='answer', return_messages=True),
