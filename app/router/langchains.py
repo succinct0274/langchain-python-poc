@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends
-from typing import Annotated, List, Union
+from typing import Annotated, List, Union, Optional
 from fastapi import FastAPI, Form, UploadFile, File, HTTPException, Header
 from app.service.langchain.model import get_langchain_model
 from langchain.embeddings.openai import OpenAIEmbeddings
@@ -28,9 +28,10 @@ from app.database.crud.conversation_history import create_conversation_history, 
 from app.database.schema.conversation_history import ConversationHistoryCreate
 from app.database.base import SessionLocal, get_session_local
 from sqlalchemy.orm import Session
-from fastapi import BackgroundTasks
+from fastapi import BackgroundTasks, Response
 import logging
 from langchain.vectorstores.pgvector import PGVector, DistanceStrategy
+from app.service.langchain.vectorstore.pgvector import PGVectorWithMetadata
 
 router = APIRouter(
     prefix='/langchains',
@@ -61,8 +62,9 @@ def _process_pdf_files(files: List[UploadFile]) -> List[Document]:
 
 @router.post('/conversate')
 async def conversate(question: Annotated[str, Form()], 
-                     files: Annotated[List[UploadFile], File()], 
                      background_tasks: BackgroundTasks,
+                     response: Response,
+                     files: Annotated[List[UploadFile], File()]=[], 
                      x_conversation_id: Annotated[Union[str, None], Header()]=None,
                      llm=Depends(get_langchain_model),
                      session: Session=Depends(get_session_local)):
@@ -70,6 +72,10 @@ async def conversate(question: Annotated[str, Form()],
     supported = content_types.issubset(supported_docuemnt_types)
     if not supported:
         raise HTTPException(status_code=400, detail='Unsupported document type')
+    
+    # Generate session id for embedding and chat history store
+    if x_conversation_id is None:
+        x_conversation_id = str(uuid.uuid4())
 
     # Process files uploaded into text
     documents = _process_pdf_files(files)
@@ -80,7 +86,10 @@ async def conversate(question: Annotated[str, Form()],
         encode_kwargs={'normalize_embeddings': False}
     )
 
-    db = PGVector('postgresql://postgres:123456@localhost:5432/chatbot', embedding_function=hf_embedding, distance_strategy=DistanceStrategy.EUCLIDEAN)
+    db = PGVectorWithMetadata(os.getenv('SQLALCHEMY_DATABASE_URL'), 
+                              embedding_function=hf_embedding, 
+                              distance_strategy=DistanceStrategy.EUCLIDEAN,
+                              collection_metadata={'conversation_id': x_conversation_id})
     # db = Chroma(embedding_function=hf_embedding)
     store = InMemoryStore()
     retriever = ParentDocumentRetriever(
@@ -124,6 +133,9 @@ async def conversate(question: Annotated[str, Form()],
     
     result = qa({"question": question})
     logger.info(f"result from openai llm: {result}")
+
+    # Return conversation id (aka session id)
+    response.headers['X-Conversation-Id'] = x_conversation_id
 
     # Save current conversation message to the database
     background_tasks.add_task(create_conversation_history, session, ConversationHistoryCreate(conversation_id=x_conversation_id, human_message=question, ai_message=result['answer']))
