@@ -32,6 +32,14 @@ from fastapi import BackgroundTasks, Response
 import logging
 from langchain.vectorstores.pgvector import PGVector, DistanceStrategy
 from app.service.langchain.vectorstore.pgvector import PGVectorWithMetadata
+from app.service.langchain.callbacks.postgres_callback_handler import PostgresCallbackHandler
+from sse_starlette import EventSourceResponse
+from app.service.langchain.callbacks.queue_callback_handler import QueueCallbackHandler
+from queue import Queue, Empty
+from threading import Thread
+from langchain.callbacks.manager import CallbackManager
+from langchain.chat_models import ChatOpenAI
+
 
 router = APIRouter(
     prefix='/langchains',
@@ -122,35 +130,39 @@ async def conversate(question: Annotated[str, Form()],
         for record in chat_records:
             memory.save_context({'input': record.human_message}, {'output': record.ai_message})
 
+    queue = Queue()
     qa = ConversationalRetrievalChain.from_llm(
-        llm=llm, 
+        llm=ChatOpenAI(temperature=0, verbose=True, streaming=True, callbacks=[QueueCallbackHandler(queue), PostgresCallbackHandler(session, x_conversation_id)]), 
         retriever=db.as_retriever(),
-        # memory=ConversationKGMemory(llm=summarization_llm, memory_key='chat_history', return_messages=True),
+        condense_question_llm=ChatOpenAI(temperature=0, verbose=True, streaming=True),
         memory=memory,
-        # memory = ConversationBufferMemory(memory_key='chat_history', output_key='answer', return_messages=True),
         verbose=True,
     )
-    
-    result = qa({"question": question})
-    logger.info(f"result from openai llm: {result}")
 
     # Return conversation id (aka session id)
     response.headers['X-Conversation-Id'] = x_conversation_id
 
+    def output_answer_token(queue: Queue):
+        job_done = object()
+        def task():
+            result = qa({'question': question})
+            background_tasks.add_task(create_conversation_history, session, ConversationHistoryCreate(conversation_id=x_conversation_id, human_message=question, ai_message=result['answer']))
+            queue.put(job_done)
+        
+        thread = Thread(target=task)
+        thread.start()
+
+        while True:
+            try:
+                item = queue.get(True, timeout=1)
+                if item is job_done:
+                    break
+                yield item
+            except Empty:
+                continue
+
     # Save current conversation message to the database
-    background_tasks.add_task(create_conversation_history, session, ConversationHistoryCreate(conversation_id=x_conversation_id, human_message=question, ai_message=result['answer']))
-
-    return result['answer']
-    # Load documents into vector store
-    # df = pd.DataFrame()
-    # panda_agent = create_pandas_dataframe_agent(
-    #     llm=llm,
-    #     df=df,
-    #     verbose=True,
-    #     agent_type=AgentType.OPENAI_FUNCTIONS,
-    # )
-
-    # panda_agent.run('how many rows are there?')
+    return EventSourceResponse(output_answer_token(queue))
 
 
 @router.post('/fake')
