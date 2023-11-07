@@ -140,6 +140,7 @@ async def conversate(question: Annotated[str, Form()],
     # Save current conversation message to the database
     background_tasks.add_task(create_conversation_history, session, ConversationHistoryCreate(conversation_id=x_conversation_id, human_message=question, ai_message=result['answer']))
 
+    return result['answer']
     # Load documents into vector store
     # df = pd.DataFrame()
     # panda_agent = create_pandas_dataframe_agent(
