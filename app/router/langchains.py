@@ -41,6 +41,7 @@ from langchain.callbacks.manager import CallbackManager
 from langchain.chat_models import ChatOpenAI
 from langchain_experimental.agents.agent_toolkits import create_pandas_dataframe_agent
 import pandas as pd
+from langchain.agents import initialize_agent
 
 router = APIRouter(
     prefix='/langchains',
@@ -76,16 +77,14 @@ def _process_pdf_files(files: List[UploadFile]) -> List[Document]:
     
     return documents
 
-def get_xlsx_tools(files: List[UploadFile]):
+def get_xlsx_dataframes(files: List[UploadFile]):
     xlsx_files = [file for file in files if file.content_type == 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']
 
     if not xlsx_files:
         return []
 
     dataframes = [pd.read_excel(excel.file.read()) for excel in xlsx_files]
-    
-    dataframe_agent = create_pandas_dataframe_agent(ChatOpenAI(temperature=0), df=dataframes, verbose=True)
-    return dataframe_agent.tools
+    return dataframes
 
 @router.post('/conversate')
 async def conversate(question: Annotated[str, Form()], 
@@ -152,6 +151,7 @@ async def conversate(question: Annotated[str, Form()],
         for record in chat_records:
             memory.save_context({'input': record.human_message}, {'output': record.ai_message})
 
+
     queue = Queue()
     qa = ConversationalRetrievalChain.from_llm(
         llm=ChatOpenAI(temperature=0, verbose=True, streaming=True, callbacks=[QueueCallbackHandler(queue), PostgresCallbackHandler(session, x_conversation_id)]), 
@@ -161,14 +161,37 @@ async def conversate(question: Annotated[str, Form()],
         verbose=True,
     )
 
+    df = get_xlsx_dataframes(files)
+    def pandas_agent(input=""):
+        pandas_agent_df = create_pandas_dataframe_agent(llm, df, number_of_head_rows=1, verbose=True) 
+        return pandas_agent_df
+
+    pandas_tool = Tool(
+        name='Pandas Data frame tool',
+        func=pandas_agent,
+        description="Useful for when you need to answer questions about a Pandas Dataframe"
+    )
+
+    conversational_agent = initialize_agent(
+        agent='chat-conversational-react-description',
+        tools=[pandas_tool],
+        llm=ChatOpenAI(temperature=0, verbose=True, streaming=True, callbacks=[QueueCallbackHandler(queue), PostgresCallbackHandler(session, x_conversation_id)]),
+        verbose=True,
+        max_iterations=3,
+        early_stopping_method='generate',
+        memory=memory,
+        handle_parsing_errors=True
+    )
+    
     # Return conversation id (aka session id)
     response.headers['X-Conversation-Id'] = x_conversation_id
 
     def output_answer_token(queue: Queue):
         job_done = object()
         def task():
-            result = qa({'question': question})
-            background_tasks.add_task(create_conversation_history, session, ConversationHistoryCreate(conversation_id=x_conversation_id, human_message=question, ai_message=result['answer']))
+            result = conversational_agent({'input': question})
+            # result = qa({'question': question})
+            background_tasks.add_task(create_conversation_history, session, ConversationHistoryCreate(conversation_id=x_conversation_id, human_message=question, ai_message=result['output']))
             queue.put(job_done)
         
         thread = Thread(target=task)
