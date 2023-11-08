@@ -5,7 +5,7 @@ from app.service.langchain.model import get_langchain_model
 from langchain.embeddings.openai import OpenAIEmbeddings
 from langchain.agents import Tool, AgentExecutor, BaseMultiActionAgent
 from langchain.utilities.serpapi import SerpAPIWrapper
-from app.service.langchain.agents.fake_agent import FakeAgent
+from app.service.langchain.agents.multi_action_agent import MultiActionAgent
 from langchain.agents.agent_types import AgentType
 from langchain_experimental.agents.agent_toolkits import create_pandas_dataframe_agent
 from langchain.document_loaders import UnstructuredAPIFileIOLoader
@@ -39,7 +39,8 @@ from queue import Queue, Empty
 from threading import Thread
 from langchain.callbacks.manager import CallbackManager
 from langchain.chat_models import ChatOpenAI
-
+from langchain_experimental.agents.agent_toolkits import create_pandas_dataframe_agent
+import pandas as pd
 
 router = APIRouter(
     prefix='/langchains',
@@ -57,9 +58,16 @@ supported_docuemnt_types = set(['application/pdf', 'application/vnd.openxmlforma
 def _process_pdf_files(files: List[UploadFile]) -> List[Document]:
     documents = []
     pdf_files = [file for file in files if file.content_type == 'application/pdf']
+    
     for pdf in pdf_files:
+        from langchain.text_splitter import CharacterTextSplitter
+    
         loader = UnstructuredAPIFileIOLoader(pdf.file, url=os.getenv('UNSTRUCTURED_API_URL'), metadata_filename=pdf.filename)
-        docs = loader.load_and_split()
+        docs = loader.load_and_split(text_splitter = CharacterTextSplitter(separator="\n",
+                                                                           chunk_size=800,
+                                                                           chunk_overlap=100,
+                                                                           length_function=len)
+                                                                           )
         for doc in docs:
             if 'doc_in' in doc.metadata:
                 continue
@@ -67,6 +75,17 @@ def _process_pdf_files(files: List[UploadFile]) -> List[Document]:
         documents.extend(docs)
     
     return documents
+
+def get_xlsx_tools(files: List[UploadFile]):
+    xlsx_files = [file for file in files if file.content_type == 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']
+
+    if not xlsx_files:
+        return []
+
+    dataframes = [pd.read_excel(excel.file.read()) for excel in xlsx_files]
+    
+    dataframe_agent = create_pandas_dataframe_agent(ChatOpenAI(temperature=0), df=dataframes, verbose=True)
+    return dataframe_agent.tools
 
 @router.post('/conversate')
 async def conversate(question: Annotated[str, Form()], 
@@ -98,6 +117,9 @@ async def conversate(question: Annotated[str, Form()],
                               embedding_function=hf_embedding, 
                               distance_strategy=DistanceStrategy.EUCLIDEAN,
                               collection_metadata={'conversation_id': x_conversation_id})
+    
+    if documents:
+        db.add_documents(documents)
     # db = Chroma(embedding_function=hf_embedding)
     # store = InMemoryStore()
     # retriever = ParentDocumentRetriever(
@@ -182,7 +204,7 @@ async def fake(question: Annotated[str, Form()], files: Annotated[list[UploadFil
         ),
     ]
 
-    agent = FakeAgent()
+    agent = MultiActionAgent()
 
     agent_executor = AgentExecutor.from_agent_and_tools(
         agent=agent, tools=tools, verbose=True

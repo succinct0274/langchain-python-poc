@@ -2,8 +2,11 @@ from typing import List, Tuple, Any, Union
 from langchain.schema import AgentAction, AgentFinish
 from langchain.agents import BaseMultiActionAgent
 
-class FakeAgent(BaseMultiActionAgent):
-    """Fake Custom Agent."""
+class MultiActionAgent(BaseMultiActionAgent):
+    """MultiAction Custom Agent."""
+
+    def __init__(self, tools):
+        self.tools = tools
 
     @property
     def input_keys(self):

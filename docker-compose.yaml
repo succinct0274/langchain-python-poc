@@ -22,6 +22,8 @@ services:
     depends_on: 
       - postgres
       - unstructured-api
+    profiles:
+      - do-not-start
     ports:
       - 8000:8000
     command: uvicorn app.main:app --host 0.0.0.0
