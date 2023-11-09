@@ -39,11 +39,13 @@ from queue import Queue, Empty
 from threading import Thread
 from langchain.callbacks.manager import CallbackManager
 from langchain.chat_models import ChatOpenAI
-from langchain_experimental.agents.agent_toolkits import create_pandas_dataframe_agent
+# from langchain_experimental.agents.agent_toolkits import create_pandas_dataframe_agent
 import pandas as pd
 from langchain.agents import initialize_agent
 from app.service.langchain.callbacks.agent_queue_callback_handler import AgentQueueCallbackHandler
 from app.service.langchain.parsers.output.output_parser import CustomConvoOutputParser
+from langchain.agents.load_tools import _LLM_TOOLS
+from app.service.langchain.agents.panda_agent import create_pandas_dataframe_agent
 
 router = APIRouter(
     prefix='/langchains',
@@ -165,7 +167,7 @@ async def conversate(question: Annotated[str, Form()],
 
     df = get_xlsx_dataframes(files)
     def pandas_agent(input=""):
-        pandas_agent_df = create_pandas_dataframe_agent(llm, df, number_of_head_rows=1, verbose=True) 
+        pandas_agent_df = create_pandas_dataframe_agent(llm, df[0] if len(df) == 1 else df, verbose=True)
         return pandas_agent_df
 
     pandas_tool = Tool(
@@ -176,7 +178,15 @@ async def conversate(question: Annotated[str, Form()],
 
     conversational_agent = initialize_agent(
         agent='chat-conversational-react-description',
-        tools=[pandas_tool],
+        tools=[
+            pandas_tool, 
+            _LLM_TOOLS['llm-math'](llm),
+            Tool(
+                func=qa,
+                description='Useful when you need to answer questions about the pdf document',
+                name='PDF tool'
+            )
+        ],
         llm=ChatOpenAI(temperature=0, verbose=True, streaming=True, callbacks=[
             AgentQueueCallbackHandler(queue),
             # QueueCallbackHandler(queue),
@@ -187,7 +197,7 @@ async def conversate(question: Annotated[str, Form()],
         memory=memory,
         handle_parsing_errors=True,
         agent_kwargs={
-            'output_parser': CustomConvoOutputParser()
+            # 'output_parser': CustomConvoOutputParser()
         }
     )
     
@@ -200,6 +210,8 @@ async def conversate(question: Annotated[str, Form()],
             result = conversational_agent({'input': question})
             # result = qa({'question': question})
             background_tasks.add_task(create_conversation_history, session, ConversationHistoryCreate(conversation_id=x_conversation_id, human_message=question, ai_message=result['output']))
+            for token in result['output']:
+                queue.put(token)
             queue.put(job_done)
         
         thread = Thread(target=task)
