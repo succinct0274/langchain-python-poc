@@ -44,6 +44,7 @@ import pandas as pd
 from langchain.agents import initialize_agent
 from app.service.langchain.callbacks.agent_queue_callback_handler import AgentQueueCallbackHandler
 from app.service.langchain.parsers.output.output_parser import CustomConvoOutputParser
+from langchain.llms.openai import OpenAI
 
 router = APIRouter(
     prefix='/langchains',
@@ -165,7 +166,7 @@ async def conversate(question: Annotated[str, Form()],
 
     df = get_xlsx_dataframes(files)
     def pandas_agent(input=""):
-        pandas_agent_df = create_pandas_dataframe_agent(llm, df, number_of_head_rows=1, verbose=True) 
+        pandas_agent_df = create_pandas_dataframe_agent(OpenAI( temperature=0, verbose=True,), df, verbose=True, agent_type=AgentType.OPENAI_FUNCTIONS) 
         return pandas_agent_df
 
     pandas_tool = Tool(
@@ -175,9 +176,9 @@ async def conversate(question: Annotated[str, Form()],
     )
 
     conversational_agent = initialize_agent(
-        agent='chat-conversational-react-description',
+        # agent='chat-conversational-react-description',
         tools=[pandas_tool],
-        llm=ChatOpenAI(temperature=0, verbose=True, streaming=True, callbacks=[
+        llm=ChatOpenAI(model_name="gpt-3.5-turbo", temperature=0, verbose=True, streaming=True, callbacks=[
             AgentQueueCallbackHandler(queue),
             # QueueCallbackHandler(queue),
             PostgresCallbackHandler(session, x_conversation_id)]),
@@ -187,9 +188,10 @@ async def conversate(question: Annotated[str, Form()],
         memory=memory,
         handle_parsing_errors=True,
         agent_kwargs={
-            'output_parser': CustomConvoOutputParser()
+            # 'output_parser': CustomConvoOutputParser()
         }
     )
+    print(conversational_agent.agent)
     
     # Return conversation id (aka session id)
     response.headers['X-Conversation-Id'] = x_conversation_id
@@ -200,6 +202,9 @@ async def conversate(question: Annotated[str, Form()],
             result = conversational_agent({'input': question})
             # result = qa({'question': question})
             background_tasks.add_task(create_conversation_history, session, ConversationHistoryCreate(conversation_id=x_conversation_id, human_message=question, ai_message=result['output']))
+
+            for token in result['output']:
+                queue.put(token)
             queue.put(job_done)
         
         thread = Thread(target=task)
@@ -215,7 +220,7 @@ async def conversate(question: Annotated[str, Form()],
                 continue
 
     # Save current conversation message to the database
-    return EventSourceResponse(output_answer_token(queue))
+    return EventSourceResponse(output_answer_token(queue), headers={'X-Conversation-Id': x_conversation_id})
 
 
 @router.post('/fake')
