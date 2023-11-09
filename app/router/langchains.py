@@ -215,7 +215,7 @@ async def conversate(question: Annotated[str, Form()],
                 continue
 
     # Save current conversation message to the database
-    return EventSourceResponse(output_answer_token(queue))
+    return EventSourceResponse(output_answer_token(queue), headers={'X-Conversation-Id': x_conversation_id})
 
 
 @router.post('/fake')
