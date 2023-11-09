@@ -42,6 +42,8 @@ from langchain.chat_models import ChatOpenAI
 from langchain_experimental.agents.agent_toolkits import create_pandas_dataframe_agent
 import pandas as pd
 from langchain.agents import initialize_agent
+from app.service.langchain.callbacks.agent_queue_callback_handler import AgentQueueCallbackHandler
+from app.service.langchain.parsers.output.output_parser import CustomConvoOutputParser
 
 router = APIRouter(
     prefix='/langchains',
@@ -83,7 +85,7 @@ def get_xlsx_dataframes(files: List[UploadFile]):
     if not xlsx_files:
         return []
 
-    dataframes = [pd.read_excel(excel.file.read()) for excel in xlsx_files]
+    dataframes = [pd.read_excel(excel.file) for excel in xlsx_files]
     return dataframes
 
 @router.post('/conversate')
@@ -175,12 +177,18 @@ async def conversate(question: Annotated[str, Form()],
     conversational_agent = initialize_agent(
         agent='chat-conversational-react-description',
         tools=[pandas_tool],
-        llm=ChatOpenAI(temperature=0, verbose=True, streaming=True, callbacks=[QueueCallbackHandler(queue), PostgresCallbackHandler(session, x_conversation_id)]),
+        llm=ChatOpenAI(temperature=0, verbose=True, streaming=True, callbacks=[
+            AgentQueueCallbackHandler(queue),
+            # QueueCallbackHandler(queue),
+            PostgresCallbackHandler(session, x_conversation_id)]),
         verbose=True,
         max_iterations=3,
         early_stopping_method='generate',
         memory=memory,
-        handle_parsing_errors=True
+        handle_parsing_errors=True,
+        agent_kwargs={
+            'output_parser': CustomConvoOutputParser()
+        }
     )
     
     # Return conversation id (aka session id)
