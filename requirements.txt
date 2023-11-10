@@ -61,6 +61,7 @@ multidict==6.0.4
 mypy-extensions==1.0.0
 networkx==3.2.1
 nltk==3.8.1
+numexpr==2.8.7
 numpy==1.26.1
 oauthlib==3.2.2
 onnxruntime==1.16.1
