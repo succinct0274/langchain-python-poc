@@ -183,7 +183,7 @@ async def conversate(question: Annotated[str, Form()],
             _LLM_TOOLS['llm-math'](llm),
             Tool(
                 func=qa,
-                description='Useful when you need to answer questions about the pdf document',
+                description='Useful when you need to answer questions about the pdf document or general stuff',
                 name='PDF tool'
             )
         ],
