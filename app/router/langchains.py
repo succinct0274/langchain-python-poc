@@ -46,6 +46,7 @@ from app.service.langchain.callbacks.agent_queue_callback_handler import AgentQu
 from app.service.langchain.parsers.output.output_parser import CustomConvoOutputParser
 from langchain.agents.load_tools import _LLM_TOOLS
 from app.service.langchain.agents.panda_agent import create_pandas_dataframe_agent
+from app.service.langchain.models.chat_open_ai_with_token_count import ChatOpenAIWithTokenCount
 
 router = APIRouter(
     prefix='/langchains',
@@ -158,9 +159,9 @@ async def conversate(question: Annotated[str, Form()],
 
     queue = Queue()
     qa = ConversationalRetrievalChain.from_llm(
-        llm=ChatOpenAI(temperature=0, verbose=True, streaming=True, callbacks=[QueueCallbackHandler(queue), PostgresCallbackHandler(session, x_conversation_id)]), 
+        llm=ChatOpenAIWithTokenCount(temperature=0, verbose=True, streaming=True, callbacks=[QueueCallbackHandler(queue), PostgresCallbackHandler(session, x_conversation_id)]), 
         retriever=db.as_retriever(),
-        condense_question_llm=ChatOpenAI(temperature=0, verbose=True, streaming=True),
+        condense_question_llm=ChatOpenAIWithTokenCount(temperature=0, verbose=True, streaming=True),
         memory=memory,
         verbose=True,
     )
@@ -173,7 +174,7 @@ async def conversate(question: Annotated[str, Form()],
     pandas_tool = Tool(
         name='Pandas Data frame tool',
         func=pandas_agent,
-        description="Useful for when you need to answer questions about a Pandas Dataframe"
+        description="Useful for when you need to answer questions about a Pandas Dataframe",
     )
 
     conversational_agent = initialize_agent(
@@ -183,8 +184,8 @@ async def conversate(question: Annotated[str, Form()],
             _LLM_TOOLS['llm-math'](llm),
             Tool(
                 func=qa,
-                description='Useful when you need to answer questions about the pdf document or general stuff',
-                name='PDF tool'
+                description='Useful when you need to answer questions about the pdf document',
+                name='PDF tool',
             )
         ],
         llm=ChatOpenAI(temperature=0, verbose=True, streaming=True, callbacks=[

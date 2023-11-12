@@ -5,10 +5,18 @@ from .router import langchains
 import uvicorn
 import os
 from app.database.base import Base, SessionLocal, engine
+import logging
+import logging.config
+import yaml
 
 load_dotenv()
 
 Base.metadata.create_all(bind=engine)
+
+with open('log_conf.yaml', 'r') as f:
+    confd = yaml.safe_load(f)
+
+logging.config.dictConfig(confd)
 
 app = FastAPI()
 

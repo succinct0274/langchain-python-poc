@@ -27,8 +27,18 @@ loggers:
     handlers:
       - access
     propagate: no
+  app.service.langchain.models.chat_open_ai_with_token_count:
+    level: INFO
+    handlers:
+      - access
+    propagate: no
+  app.router.langchain:
+    level: INFO
+    handlers:
+      - access
+    propagate: no
 root:
-  level: DEBUG
+  level: INFO
   handlers:
     - default
   propagate: no
