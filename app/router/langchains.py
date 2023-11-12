@@ -173,7 +173,7 @@ async def conversate(question: Annotated[str, Form()],
 
     pandas_tool = Tool(
         name='Pandas Data frame tool',
-        func=pandas_agent,
+        func=pandas_agent().run,
         description="Useful for when you need to answer questions about a Pandas Dataframe",
     )
 
@@ -208,6 +208,7 @@ async def conversate(question: Annotated[str, Form()],
     def output_answer_token(queue: Queue):
         job_done = object()
         def task():
+            # result = pandas_agent()({'input': question})
             result = conversational_agent({'input': question})
             # result = qa({'question': question})
             background_tasks.add_task(create_conversation_history, session, ConversationHistoryCreate(conversation_id=x_conversation_id, human_message=question, ai_message=result['output']))
