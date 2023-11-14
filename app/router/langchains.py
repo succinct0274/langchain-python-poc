@@ -39,7 +39,6 @@ from queue import Queue, Empty
 from threading import Thread
 from langchain.callbacks.manager import CallbackManager
 from langchain.chat_models import ChatOpenAI
-# from langchain_experimental.agents.agent_toolkits import create_pandas_dataframe_agent
 import pandas as pd
 from langchain.agents import initialize_agent
 from app.service.langchain.callbacks.agent_queue_callback_handler import AgentQueueCallbackHandler
@@ -52,10 +51,6 @@ router = APIRouter(
     prefix='/langchains',
     tags=['langchains'],
 )
-
-def random_word(query: str) -> str:
-    print("\nNow I'm doing this!")
-    return "foo"
 
 logger = logging.getLogger(__name__)
 
@@ -124,25 +119,6 @@ async def conversate(question: Annotated[str, Form()],
     
     if documents:
         db.add_documents(documents)
-    # db = Chroma(embedding_function=hf_embedding)
-    # store = InMemoryStore()
-    # retriever = ParentDocumentRetriever(
-    #     vectorstore=db,
-    #     docstore=store,
-    #     child_splitter=RecursiveCharacterTextSplitter(chunk_size=400),
-    #     parent_splitter=RecursiveCharacterTextSplitter(chunk_size=500),
-    # )
-
-    # doc_ids = [doc.metadata['doc_id'] for doc in documents]
-    # retriever.add_documents(documents, ids=None)
-
-    # model_id = "Writer/palmyra-small"
-    # tokenizer = AutoTokenizer.from_pretrained(model_id)
-    # model = AutoModelForCausalLM.from_pretrained(model_id)
-    # pipe = pipeline(
-    #     "text-generation", model=model, tokenizer=tokenizer, max_new_tokens=10
-    # )
-    # llm = HuggingFacePipeline(pipeline=pipe)
 
     # Instantiate the summary llm and set the max length of output to 300
     summarization_model_name = 'pszemraj/led-large-book-summary'
@@ -230,30 +206,4 @@ async def conversate(question: Annotated[str, Form()],
 
     # Save current conversation message to the database
     return EventSourceResponse(output_answer_token(queue), headers={'X-Conversation-Id': x_conversation_id})
-
-
-@router.post('/fake')
-async def fake(question: Annotated[str, Form()], files: Annotated[list[UploadFile], File()], llm=Depends(get_langchain_model)):
-    search = SerpAPIWrapper()
-
-    tools = [
-        Tool(
-            name="Search",
-            func=search.run,
-            description="useful for when you need to answer questions about current events",
-        ),
-        Tool(
-            name="RandomWord",
-            func=random_word,
-            description="call this to get a random word.",
-        ),
-    ]
-
-    agent = MultiActionAgent()
-
-    agent_executor = AgentExecutor.from_agent_and_tools(
-        agent=agent, tools=tools, verbose=True
-    )
-
-    agent_executor.run("How many people live in canada as of 2023?")
 
