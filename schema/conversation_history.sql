@@ -4,6 +4,7 @@ CREATE TABLE conversation_history (
 	human_message TEXT NOT NULL,
 	ai_message TEXT NOT NULL,
 	existing_summary TEXT DEFAULT '',
+	greeting BOOL DEFAULT FALSE,
 	created_at timestamp DEFAULT now(),
 	created_by varchar(255) DEFAULT NULL,
 	updated_at timestamp DEFAULT now(),

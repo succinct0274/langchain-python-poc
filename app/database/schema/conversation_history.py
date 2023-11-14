@@ -20,6 +20,7 @@ class ConversationHistoryCreate(ConversationHistoryBase):
     human_message: str
     ai_message: str
     existing_summary: str | None = None
+    greeting: bool = False
 
     class Config:
         from_attributes = True
