@@ -46,6 +46,7 @@ from app.service.langchain.parsers.output.output_parser import CustomConvoOutput
 from langchain.agents.load_tools import _LLM_TOOLS
 from app.service.langchain.agents.panda_agent import create_pandas_dataframe_agent
 from app.service.langchain.models.chat_open_ai_with_token_count import ChatOpenAIWithTokenCount
+from bson import Binary
 
 router = APIRouter(
     prefix='/langchains',
@@ -86,6 +87,20 @@ def get_xlsx_dataframes(files: List[UploadFile]):
 
     dataframes = [pd.read_excel(excel.file) for excel in xlsx_files]
     return dataframes
+
+@router.post('/upload')
+async def upload(files: Annotated[List[UploadFile], File()],
+                 x_conversation_id: Annotated[str, Header()]):
+    content_types = set([file.content_type for file in files])
+    supported = content_types.issubset(SUPPORTED_DOCUMENT_TYPES)
+    if not supported:
+        raise HTTPException(status_code=400, detail='Unsupported document type')
+    
+    from app.mongodb.crud.document import create_document
+    from app.mongodb.schema.document import DocumentCreate
+    for file in files:
+        entity = DocumentCreate(content=Binary(file.file.read()), filename=file.filename, mime_type=file.content_type, conversation_id=x_conversation_id)
+        await create_document(entity)
 
 @router.post('/conversate')
 async def conversate(question: Annotated[str, Form()], 
