@@ -2,7 +2,7 @@ from sqlalchemy.orm import Session
 from app.database.model.conversation_history import ConversationHistory
 from app.database.schema.conversation_history import ConversationHistoryCreate
 from uuid import UUID
-from sqlalchemy import select, literal, exists
+from sqlalchemy import select, literal, exists, and_
 from typing import List
 
 def create_conversation_history(db: Session, conversation_history: ConversationHistoryCreate):
@@ -14,7 +14,7 @@ def create_conversation_history(db: Session, conversation_history: ConversationH
 
 def get_conversation_historys_by_conversation_id(db: Session, conversation_id: UUID) -> List[ConversationHistory]:
     return db.execute(select(ConversationHistory)
-                      .filter_by(conversation_id=conversation_id)
+                      .filter(and_(ConversationHistory.conversation_id == conversation_id, ConversationHistory.greeting == False))
                       .order_by(ConversationHistory.created_at.asc())).scalars().all()
 
 def exists_conversation_historys_by_conversation_id(db: Session, conversation_id: UUID) -> bool:
