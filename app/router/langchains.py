@@ -24,7 +24,7 @@ from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
 from langchain.schema import Document
 import uuid
 from langchain.memory.chat_message_histories import PostgresChatMessageHistory
-from app.database.crud.conversation_history import create_conversation_history, get_conversation_historys_by_conversation_id
+from app.database.crud.conversation_history import create_conversation_history, get_conversation_historys_by_conversation_id, exists_conversation_historys_by_conversation_id
 from app.database.schema.conversation_history import ConversationHistoryCreate
 from app.database.base import SessionLocal, get_session_local
 from sqlalchemy.orm import Session
@@ -54,7 +54,8 @@ router = APIRouter(
 
 logger = logging.getLogger(__name__)
 
-supported_docuemnt_types = set(['application/pdf', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'])
+DEFAULT_AI_GREETING_MESSAGE = 'Hi there, how can I help you?'
+SUPPORTED_DOCUMENT_TYPES = set(['application/pdf', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'])
 
 def _process_pdf_files(files: List[UploadFile]) -> List[Document]:
     documents = []
@@ -95,7 +96,7 @@ async def conversate(question: Annotated[str, Form()],
                      llm=Depends(get_langchain_model),
                      session: Session=Depends(get_session_local)):
     content_types = set([file.content_type for file in files])
-    supported = content_types.issubset(supported_docuemnt_types)
+    supported = content_types.issubset(SUPPORTED_DOCUMENT_TYPES)
     if not supported:
         raise HTTPException(status_code=400, detail='Unsupported document type')
     
@@ -207,3 +208,19 @@ async def conversate(question: Annotated[str, Form()],
     # Save current conversation message to the database
     return EventSourceResponse(output_answer_token(queue), headers={'X-Conversation-Id': x_conversation_id})
 
+@router.post('/session/init')
+async def init_session(session: Session=Depends(get_session_local)):
+    sid = uuid.uuid4()
+
+    while exists_conversation_historys_by_conversation_id(session, sid):
+        sid = uuid.uuid4()
+
+    create_conversation_history(session, ConversationHistoryCreate(conversation_id=sid,
+                                                                   human_message='Hi',
+                                                                   ai_message=DEFAULT_AI_GREETING_MESSAGE,
+                                                                   greeting=True))
+    
+    return {
+        'conversation_id': sid,
+        'ai_message': DEFAULT_AI_GREETING_MESSAGE,
+    }
