@@ -47,6 +47,8 @@ from langchain.agents.load_tools import _LLM_TOOLS
 from app.service.langchain.agents.panda_agent import create_pandas_dataframe_agent
 from app.service.langchain.models.chat_open_ai_with_token_count import ChatOpenAIWithTokenCount
 from bson import Binary
+from app.mongodb.crud.document import create_document, find_document_by_conversation_id_and_filenames
+from app.mongodb.schema.document import DocumentCreate
 
 router = APIRouter(
     prefix='/langchains',
@@ -115,9 +117,6 @@ async def upload(files: Annotated[List[UploadFile], File()],
     supported = content_types.issubset(SUPPORTED_DOCUMENT_TYPES)
     if not supported:
         raise HTTPException(status_code=400, detail='Unsupported document type')
-    
-    from app.mongodb.crud.document import create_document, find_document_by_conversation_id_and_filenames
-    from app.mongodb.schema.document import DocumentCreate
     
     existed = await find_document_by_conversation_id_and_filenames(x_conversation_id, [f.filename for f in files])
     existed_filenames = set([persisted['filename'] for persisted in existed])
