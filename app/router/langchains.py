@@ -88,19 +88,50 @@ def get_xlsx_dataframes(files: List[UploadFile]):
     dataframes = [pd.read_excel(excel.file) for excel in xlsx_files]
     return dataframes
 
+def load_document_to_vector_store(files: List[UploadFile], conversation_id: str):
+    documents = _process_pdf_files(files)
+
+    if len(documents) == 0:
+        return
+    
+    # Make vector store asynchronous
+    hf_embedding = HuggingFaceEmbeddings(
+        model_name='sentence-transformers/all-MiniLM-L6-v2',
+        encode_kwargs={'normalize_embeddings': False}
+    )
+
+    db = PGVectorWithMetadata(os.getenv('SQLALCHEMY_DATABASE_URL'), 
+                              embedding_function=hf_embedding, 
+                              distance_strategy=DistanceStrategy.EUCLIDEAN,
+                              collection_metadata={'conversation_id': conversation_id})
+    
+    db.add_documents(documents)
+
 @router.post('/upload')
 async def upload(files: Annotated[List[UploadFile], File()],
-                 x_conversation_id: Annotated[str, Header()]):
+                 x_conversation_id: Annotated[str, Header()],
+                 background_tasks: BackgroundTasks):
     content_types = set([file.content_type for file in files])
     supported = content_types.issubset(SUPPORTED_DOCUMENT_TYPES)
     if not supported:
         raise HTTPException(status_code=400, detail='Unsupported document type')
     
-    from app.mongodb.crud.document import create_document
+    from app.mongodb.crud.document import create_document, find_document_by_conversation_id_and_filenames
     from app.mongodb.schema.document import DocumentCreate
+    
+    existed = await find_document_by_conversation_id_and_filenames(x_conversation_id, [f.filename for f in files])
+    existed_filenames = set([persisted['filename'] for persisted in existed])
+    docs_for_vector_store = []
     for file in files:
+        if file.filename in existed_filenames:
+            continue
+
+        docs_for_vector_store.append(file)
         entity = DocumentCreate(content=Binary(file.file.read()), filename=file.filename, mime_type=file.content_type, conversation_id=x_conversation_id)
+        file.file.seek(0)
         await create_document(entity)
+
+    background_tasks.add_task(load_document_to_vector_store, docs_for_vector_store, x_conversation_id)
 
 @router.post('/conversate')
 async def conversate(question: Annotated[str, Form()], 
