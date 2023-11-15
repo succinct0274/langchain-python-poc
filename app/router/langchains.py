@@ -130,7 +130,8 @@ async def upload(files: Annotated[List[UploadFile], File()],
         file.file.seek(0)
         await create_document(entity)
 
-    background_tasks.add_task(load_document_to_vector_store, docs_for_vector_store, x_conversation_id)
+    load_document_to_vector_store(docs_for_vector_store, x_conversation_id)
+    # background_tasks.add_task(load_document_to_vector_store, docs_for_vector_store, x_conversation_id)
 
 @router.post('/conversate')
 async def conversate(question: Annotated[str, Form()], 
@@ -150,7 +151,7 @@ async def conversate(question: Annotated[str, Form()],
         x_conversation_id = str(uuid.uuid4())
 
     # Process files uploaded into text
-    documents = _process_pdf_files(files)
+    await upload(files, x_conversation_id, background_tasks)
 
     # Make vector store asynchronous
     hf_embedding = HuggingFaceEmbeddings(
@@ -162,9 +163,6 @@ async def conversate(question: Annotated[str, Form()],
                               embedding_function=hf_embedding, 
                               distance_strategy=DistanceStrategy.EUCLIDEAN,
                               collection_metadata={'conversation_id': x_conversation_id})
-    
-    if documents:
-        db.add_documents(documents)
 
     # Instantiate the summary llm and set the max length of output to 300
     summarization_model_name = 'pszemraj/led-large-book-summary'
