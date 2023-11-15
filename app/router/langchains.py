@@ -24,7 +24,7 @@ from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
 from langchain.schema import Document
 import uuid
 from langchain.memory.chat_message_histories import PostgresChatMessageHistory
-from app.database.crud.conversation_history import create_conversation_history, get_conversation_historys_by_conversation_id, exists_conversation_historys_by_conversation_id
+from app.database.crud.conversation_history import create_conversation_history, find_conversation_historys_by_conversation_id, exists_conversation_historys_by_conversation_id
 from app.database.schema.conversation_history import ConversationHistoryCreate
 from app.database.base import SessionLocal, get_session_local
 from sqlalchemy.orm import Session
@@ -109,6 +109,11 @@ def load_document_to_vector_store(files: List[UploadFile], conversation_id: str)
     
     db.add_documents(documents)
 
+@router.get('/conversate')
+async def find_conversation(x_conversation_id: Annotated[str, Header()],
+                            session: Session=Depends(get_session_local)):
+    return find_conversation_historys_by_conversation_id(session, x_conversation_id)
+
 @router.post('/upload')
 async def upload(files: Annotated[List[UploadFile], File()],
                  x_conversation_id: Annotated[str, Header()],
@@ -172,7 +177,7 @@ async def conversate(question: Annotated[str, Form()],
 
     # Load conversation history from the database if corresponding header provided
     if x_conversation_id is not None:
-        chat_records = get_conversation_historys_by_conversation_id(session, x_conversation_id)
+        chat_records = find_conversation_historys_by_conversation_id(session, x_conversation_id)
         for record in chat_records:
             memory.save_context({'input': record.human_message}, {'output': record.ai_message})
 
