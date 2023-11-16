@@ -155,6 +155,8 @@ async def conversate(question: Annotated[str, Form()],
     if x_conversation_id is None:
         x_conversation_id = str(uuid.uuid4())
 
+    print(f'Question: {question}')
+
     # Process files uploaded into text
     await upload(files, x_conversation_id, background_tasks)
 
@@ -226,35 +228,16 @@ async def conversate(question: Annotated[str, Form()],
             # 'output_parser': CustomConvoOutputParser()
         }
     )
-    
+
+    # Save current conversation message to the database
+    result = conversational_agent({'input': question})
+    background_tasks.add_task(create_conversation_history, session, ConversationHistoryCreate(conversation_id=x_conversation_id, human_message=question, ai_message=result['output']))
+
     # Return conversation id (aka session id)
     response.headers['X-Conversation-Id'] = x_conversation_id
 
-    def output_answer_token(queue: Queue):
-        job_done = object()
-        def task():
-            # result = pandas_agent()({'input': question})
-            result = conversational_agent({'input': question})
-            # result = qa({'question': question})
-            background_tasks.add_task(create_conversation_history, session, ConversationHistoryCreate(conversation_id=x_conversation_id, human_message=question, ai_message=result['output']))
-            for token in result['output']:
-                queue.put(token)
-            queue.put(job_done)
-        
-        thread = Thread(target=task)
-        thread.start()
-
-        while True:
-            try:
-                item = queue.get(True, timeout=1)
-                if item is job_done:
-                    break
-                yield item
-            except Empty:
-                continue
-
-    # Save current conversation message to the database
-    return EventSourceResponse(output_answer_token(queue), headers={'X-Conversation-Id': x_conversation_id})
+    print(result)
+    return { 'text': result['output'] }
 
 @router.post('/session/init')
 async def init_session(session: Session=Depends(get_session_local)):

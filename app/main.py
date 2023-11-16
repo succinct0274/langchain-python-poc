@@ -5,6 +5,7 @@ from .router import langchains
 import uvicorn
 import os
 from app.database.base import Base, SessionLocal, engine
+from fastapi.middleware.cors import CORSMiddleware
 import logging
 import logging.config
 import yaml
@@ -20,6 +21,17 @@ logging.config.dictConfig(confd)
 
 app = FastAPI()
 
+origins = [
+    'http://localhost',
+    'http://localhost:3000'
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=['*'],
+    allow_headers=['*'],
+    allow_methods=["*"],
+)
 app.include_router(langchains.router)
 
 @app.get("/")
