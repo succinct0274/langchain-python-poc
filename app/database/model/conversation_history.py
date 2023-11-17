@@ -1,6 +1,7 @@
 from app.database.base import Base
 from sqlalchemy import Column, Integer, String, TIMESTAMP, text, Boolean
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy_json import mutable_json_type
 
 class ConversationHistory(Base):
 
@@ -10,7 +11,7 @@ class ConversationHistory(Base):
     conversation_id = Column(UUID(as_uuid=True), server_default=text('gen_random_uuid()'))
     human_message = Column(String, nullable=False)
     ai_message = Column(String, nullable=False)
-    existing_summary = Column(String)
+    file_detail = Column(mutable_json_type(dbtype=JSONB, nested=True))
     greeting = Column(Boolean, nullable=False, default=True)
     created_at = Column(TIMESTAMP, server_default=text('now()'))
     created_by = Column(String(255))

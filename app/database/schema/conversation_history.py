@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 from app.database.base import SessionLocal
 from sqlalchemy import Column, Integer, String, TIMESTAMP
 from uuid import uuid4, UUID
@@ -19,7 +19,7 @@ class ConversationHistoryCreate(ConversationHistoryBase):
     id: int | None = None
     human_message: str
     ai_message: str
-    existing_summary: str | None = None
+    file_detail: dict | List[dict] | None = None
     greeting: bool = False
 
     class Config:

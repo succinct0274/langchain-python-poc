@@ -158,6 +158,9 @@ async def conversate(question: Annotated[str, Form()],
     print(f'Question: {question}')
 
     # Process files uploaded into text
+    file_detail = []
+    for file in files:
+        file_detail.append({'filename': file.filename, 'mime_type': file.content_type})
     await upload(files, x_conversation_id, background_tasks)
 
     # Make vector store asynchronous
@@ -230,8 +233,9 @@ async def conversate(question: Annotated[str, Form()],
     )
 
     # Save current conversation message to the database
+    # result = pandas_agent()({'input': question})
     result = conversational_agent({'input': question})
-    background_tasks.add_task(create_conversation_history, session, ConversationHistoryCreate(conversation_id=x_conversation_id, human_message=question, ai_message=result['output']))
+    background_tasks.add_task(create_conversation_history, session, ConversationHistoryCreate(conversation_id=x_conversation_id, human_message=question, ai_message=result['output'], file_detail=file_detail))
 
     # Return conversation id (aka session id)
     response.headers['X-Conversation-Id'] = x_conversation_id
