@@ -4,9 +4,10 @@ from app.database.schema.conversation_history import ConversationHistoryCreate
 from uuid import UUID
 from sqlalchemy import select, literal, exists, and_
 from typing import List
+import json
 
 def create_conversation_history(db: Session, conversation_history: ConversationHistoryCreate):
-    entity = ConversationHistory(**conversation_history.model_dump())
+    entity = ConversationHistory(**json.loads(conversation_history.json()))
     db.add(entity)
     db.commit()
     db.refresh(entity)

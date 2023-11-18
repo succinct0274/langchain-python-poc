@@ -49,6 +49,8 @@ from app.service.langchain.models.chat_open_ai_with_token_count import ChatOpenA
 from bson import Binary
 from app.mongodb.crud.document import create_document, find_document_by_conversation_id_and_filenames
 from app.mongodb.schema.document import DocumentCreate
+from pandasai import Agent
+from langchain.llms.openai import OpenAI
 
 router = APIRouter(
     prefix='/langchains',
@@ -197,13 +199,12 @@ async def conversate(question: Annotated[str, Form()],
     )
 
     df = get_xlsx_dataframes(files)
-    def pandas_agent(input=""):
-        pandas_agent_df = create_pandas_dataframe_agent(llm, df[0] if len(df) == 1 else df, verbose=True)
-        return pandas_agent_df
+    def pandas_agent():
+        return Agent(df, config={'llm': llm, 'open_charts': False, 'save_charts': True})
 
     pandas_tool = Tool(
         name='Pandas Data frame tool',
-        func=pandas_agent().run,
+        func=pandas_agent().chat,
         description="Useful for when you need to answer questions about a Pandas Dataframe",
     )
 
