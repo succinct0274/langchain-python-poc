@@ -198,19 +198,22 @@ async def conversate(question: Annotated[str, Form()],
 
     df = get_xlsx_dataframes(files)
     def pandas_agent(input=""):
-        pandas_agent_df = create_pandas_dataframe_agent(llm, df[0] if len(df) == 1 else df, verbose=True, agent_executor_kwargs={
-            'handle_parsing_errors': True
-        })
+        pandas_agent_df = create_pandas_dataframe_agent(llm, 
+                                                        df[0] if len(df) == 1 else df, 
+                                                        verbose=True, 
+                                                        agent_executor_kwargs={'handle_parsing_errors': True},
+                                                        agent_type=AgentType.OPENAI_FUNCTIONS)
         return pandas_agent_df
 
     pandas_tool = Tool(
         name='Pandas Data frame tool',
         func=pandas_agent().run,
         description="Useful for when you need to answer questions about a Pandas Dataframe",
+        return_direct=True,
     )
 
     conversational_agent = initialize_agent(
-        agent='chat-conversational-react-description',
+        agent='zero-shot-react-description',
         tools=[
             pandas_tool, 
             _LLM_TOOLS['llm-math'](llm),
@@ -230,12 +233,12 @@ async def conversate(question: Annotated[str, Form()],
         memory=memory,
         handle_parsing_errors=True,
         agent_kwargs={
+            'verbose': True
             # 'output_parser': CustomConvoOutputParser()
         }
     )
 
     # Save current conversation message to the database
-    # result = pandas_agent()({'input': question})
     result = conversational_agent({'input': question})
     background_tasks.add_task(create_conversation_history, session, ConversationHistoryCreate(conversation_id=x_conversation_id, human_message=question, ai_message=result['output'], file_detail=file_detail))
 
