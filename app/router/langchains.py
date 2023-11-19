@@ -198,7 +198,9 @@ async def conversate(question: Annotated[str, Form()],
 
     df = get_xlsx_dataframes(files)
     def pandas_agent(input=""):
-        pandas_agent_df = create_pandas_dataframe_agent(llm, df[0] if len(df) == 1 else df, verbose=True)
+        pandas_agent_df = create_pandas_dataframe_agent(llm, df[0] if len(df) == 1 else df, verbose=True, agent_executor_kwargs={
+            'handle_parsing_errors': True
+        })
         return pandas_agent_df
 
     pandas_tool = Tool(
