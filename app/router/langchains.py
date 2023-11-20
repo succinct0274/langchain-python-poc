@@ -259,7 +259,7 @@ async def conversate(question: Annotated[str, Form()],
                 'content': encoded_string,
                 'content_type': mime_type
             })
-            res['image'] = encoded_string
+            res['image'] = output_media
 
     # Save current conversation message to the database
     background_tasks.add_task(create_conversation_history, session, ConversationHistoryCreate(conversation_id=x_conversation_id, 
