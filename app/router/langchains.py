@@ -253,7 +253,11 @@ async def conversate(question: Annotated[str, Form()],
             res['image'] = encoded_string
 
     # Save current conversation message to the database
-    background_tasks.add_task(create_conversation_history, session, ConversationHistoryCreate(conversation_id=x_conversation_id, human_message=question, ai_message=answer, file_detail=file_detail))
+    background_tasks.add_task(create_conversation_history, session, ConversationHistoryCreate(conversation_id=x_conversation_id, 
+                                                                                              human_message=question, 
+                                                                                              ai_message=answer, 
+                                                                                              uploaded_file_detail=file_detail,
+                                                                                              responded_media=encoded_string))
     return res
 
 @router.post('/session/init')

@@ -19,7 +19,8 @@ class ConversationHistoryCreate(ConversationHistoryBase):
     id: int | None = None
     human_message: str
     ai_message: str
-    file_detail: dict | List[dict] | None = None
+    uploaded_file_detail: List[dict] | None = None
+    responded_media: str | None = None
     greeting: bool = False
 
     class Config:
