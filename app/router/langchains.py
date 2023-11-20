@@ -55,7 +55,7 @@ from langchain.schema.output_parser import StrOutputParser
 from datetime import date
 import time
 import base64
-
+import mimetypes
 
 router = APIRouter(
     prefix='/langchains',
@@ -247,9 +247,15 @@ async def conversate(question: Annotated[str, Form()],
     res = { 'text': answer }
 
     # Convert the image into base64 as part of the response
+    output_media = []
     if os.path.exists(exported_chart_path):
         with open(exported_chart_path, "rb") as image_file:
-            encoded_string = base64.b64encode(image_file.read())
+            encoded_string = base64.b64encode(image_file.read()).decode()
+            mime_type, _ = mimetypes.guess_type(exported_chart_path)
+            output_media.append({
+                'content': encoded_string,
+                'content_type': mime_type
+            })
             res['image'] = encoded_string
 
     # Save current conversation message to the database
@@ -257,7 +263,7 @@ async def conversate(question: Annotated[str, Form()],
                                                                                               human_message=question, 
                                                                                               ai_message=answer, 
                                                                                               uploaded_file_detail=file_detail,
-                                                                                              responded_media=encoded_string))
+                                                                                              responded_media=output_media))
     return res
 
 @router.post('/session/init')
