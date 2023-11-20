@@ -47,8 +47,11 @@ from langchain.agents.load_tools import _LLM_TOOLS
 from app.service.langchain.agents.panda_agent import create_pandas_dataframe_agent
 from app.service.langchain.models.chat_open_ai_with_token_count import ChatOpenAIWithTokenCount
 from bson import Binary
+from langchain.schema.runnable import RunnableBranch
 from app.mongodb.crud.document import create_document, find_document_by_conversation_id_and_filenames
 from app.mongodb.schema.document import DocumentCreate
+from langchain.prompts import PromptTemplate
+from langchain.schema.output_parser import StrOutputParser
 
 router = APIRouter(
     prefix='/langchains',
@@ -197,56 +200,48 @@ async def conversate(question: Annotated[str, Form()],
     )
 
     df = get_xlsx_dataframes(files)
-    def pandas_agent(input=""):
-        pandas_agent_df = create_pandas_dataframe_agent(llm, 
-                                                        df[0] if len(df) == 1 else df, 
+
+    chain = (
+        PromptTemplate.from_template(
+            """Given the user question below, classify it as either being about `DataFrame` or `RetrievalQA`.
+                                        
+            Do not respond with more than one word.
+
+            <question>
+            {question}
+            </question>
+
+            Classification:"""
+        )
+        | ChatOpenAI(temperature=0)
+        | StrOutputParser()
+    )
+
+    def run_with_panda_agent(question: str):
+        question += "\n If you have plotted a chart, you don't need to show the chart but you have to save it as temp.png"
+        panda_agent = create_pandas_dataframe_agent(ChatOpenAI(temperature=0, verbose=True), 
+                                                        df[0] if len(df) == 1 else df,
                                                         verbose=True, 
                                                         agent_executor_kwargs={'handle_parsing_errors': True},
                                                         agent_type=AgentType.OPENAI_FUNCTIONS)
-        return pandas_agent_df
+        
+        return panda_agent.run({'input': question})
 
-    pandas_tool = Tool(
-        name='Pandas Data frame tool',
-        func=pandas_agent().run,
-        description="Useful for when you need to answer questions about a Pandas Dataframe",
-        return_direct=True,
+    branch = RunnableBranch(
+        (lambda x: "dataframe" in x["topic"].lower(), lambda x: run_with_panda_agent(x['question'])),
+        lambda x: qa(x['question'])['result']
     )
 
-    conversational_agent = initialize_agent(
-        agent='zero-shot-react-description',
-        tools=[
-            pandas_tool, 
-            _LLM_TOOLS['llm-math'](llm),
-            Tool(
-                func=qa,
-                description='Useful when you need to answer questions about the pdf document',
-                name='PDF tool',
-            )
-        ],
-        llm=ChatOpenAI(temperature=0, verbose=True, streaming=True, callbacks=[
-            AgentQueueCallbackHandler(queue),
-            # QueueCallbackHandler(queue),
-            PostgresCallbackHandler(session, x_conversation_id)]),
-        verbose=True,
-        max_iterations=3,
-        early_stopping_method='generate',
-        memory=memory,
-        handle_parsing_errors=True,
-        agent_kwargs={
-            'verbose': True
-            # 'output_parser': CustomConvoOutputParser()
-        }
-    )
+    full_chain = {"topic": chain, "question": lambda x: x["question"]} | branch
+    answer = full_chain.invoke({'question': question})
 
     # Save current conversation message to the database
-    result = conversational_agent({'input': question})
-    background_tasks.add_task(create_conversation_history, session, ConversationHistoryCreate(conversation_id=x_conversation_id, human_message=question, ai_message=result['output'], file_detail=file_detail))
+    background_tasks.add_task(create_conversation_history, session, ConversationHistoryCreate(conversation_id=x_conversation_id, human_message=question, ai_message=answer, file_detail=file_detail))
 
     # Return conversation id (aka session id)
     response.headers['X-Conversation-Id'] = x_conversation_id
 
-    print(result)
-    return { 'text': result['output'] }
+    return { 'text': answer }
 
 @router.post('/session/init')
 async def init_session(session: Session=Depends(get_session_local)):
