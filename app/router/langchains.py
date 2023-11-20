@@ -52,6 +52,10 @@ from app.mongodb.crud.document import create_document, find_document_by_conversa
 from app.mongodb.schema.document import DocumentCreate
 from langchain.prompts import PromptTemplate
 from langchain.schema.output_parser import StrOutputParser
+from datetime import date
+import time
+import base64
+
 
 router = APIRouter(
     prefix='/langchains',
@@ -217,8 +221,10 @@ async def conversate(question: Annotated[str, Form()],
         | StrOutputParser()
     )
 
+    timestamp = str(int(time.time()))
+    exported_chart_path = f'export/chart/{date.today()}/{timestamp}/{x_conversation_id}.png'
     def run_with_panda_agent(question: str):
-        question += "\n If you have plotted a chart, you don't need to show the chart but you have to save it as temp.png"
+        question += f"\n If you have plotted a chart, you don't need to show the chart but you have to save it as {exported_chart_path}. Also, you should create the directory if not existed."
         panda_agent = create_pandas_dataframe_agent(ChatOpenAI(temperature=0, verbose=True), 
                                                         df[0] if len(df) == 1 else df,
                                                         verbose=True, 
@@ -234,14 +240,21 @@ async def conversate(question: Annotated[str, Form()],
 
     full_chain = {"topic": chain, "question": lambda x: x["question"]} | branch
     answer = full_chain.invoke({'question': question})
-
-    # Save current conversation message to the database
-    background_tasks.add_task(create_conversation_history, session, ConversationHistoryCreate(conversation_id=x_conversation_id, human_message=question, ai_message=answer, file_detail=file_detail))
-
+    
     # Return conversation id (aka session id)
     response.headers['X-Conversation-Id'] = x_conversation_id
 
-    return { 'text': answer }
+    res = { 'text': answer }
+
+    # Convert the image into base64 as part of the response
+    if os.path.exists(exported_chart_path):
+        with open(exported_chart_path, "rb") as image_file:
+            encoded_string = base64.b64encode(image_file.read())
+            res['image'] = encoded_string
+
+    # Save current conversation message to the database
+    background_tasks.add_task(create_conversation_history, session, ConversationHistoryCreate(conversation_id=x_conversation_id, human_message=question, ai_message=answer, file_detail=file_detail))
+    return res
 
 @router.post('/session/init')
 async def init_session(session: Session=Depends(get_session_local)):
