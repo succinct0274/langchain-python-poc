@@ -207,7 +207,10 @@ async def conversate(question: Annotated[str, Form()],
 
     chain = (
         PromptTemplate.from_template(
-            """Given the user question below, classify it as either being about `DataFrame` or `RetrievalQA`.
+            """Given the user question below, classify it as either being about `Dataframe` or `RetrievalQA`.
+
+            Choose `DataFrame` if the question is related to excel, csv or dataframe.
+            Choose `RetrievalQA` if the question is about general stuff or relevant to document or pdf files.
                                         
             Do not respond with more than one word.
 
@@ -235,7 +238,7 @@ async def conversate(question: Annotated[str, Form()],
 
     branch = RunnableBranch(
         (lambda x: "dataframe" in x["topic"].lower(), lambda x: run_with_panda_agent(x['question'])),
-        lambda x: qa(x['question'])['result']
+        lambda x: qa(x['question'])['answer']
     )
 
     full_chain = {"topic": chain, "question": lambda x: x["question"]} | branch
