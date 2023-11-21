@@ -35,6 +35,7 @@ app.add_middleware(
     allow_origins=['*'],
     allow_headers=['*'],
     allow_methods=["*"],
+    expose_headers=["X-Conversation-Id"]
 )
 app.include_router(langchains.router)
 
