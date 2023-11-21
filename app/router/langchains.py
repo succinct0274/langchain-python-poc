@@ -225,9 +225,14 @@ async def conversate(question: Annotated[str, Form()],
     )
 
     timestamp = str(int(time.time()))
-    exported_chart_path = f'export/chart/{date.today()}/{timestamp}/{x_conversation_id}.png'
+    image_name = f'{x_conversation_id}.png'
+    exported_chart_path = f'export/chart/{date.today()}/{timestamp}'
+    image_path = f'{exported_chart_path}/{image_name}'
     def run_with_panda_agent(question: str):
-        question += f"\n If you have plotted a chart, you don't need to show the chart but you have to save it as {exported_chart_path}. Also, you should create the directory if not existed."
+        question += f"""
+        If you have plotted a chart, you don't have to show the chart but save it as {image_path}. 
+        Remember to create directory {exported_chart_path} before you save your plot. 
+        """
         panda_agent = create_pandas_dataframe_agent(ChatOpenAI(temperature=0, verbose=True), 
                                                         df[0] if len(df) == 1 else df,
                                                         verbose=True, 
@@ -251,10 +256,10 @@ async def conversate(question: Annotated[str, Form()],
 
     # Convert the image into base64 as part of the response
     output_media = []
-    if os.path.exists(exported_chart_path):
-        with open(exported_chart_path, "rb") as image_file:
+    if os.path.exists(image_path):
+        with open(image_path, "rb") as image_file:
             encoded_string = base64.b64encode(image_file.read()).decode()
-            mime_type, _ = mimetypes.guess_type(exported_chart_path)
+            mime_type, _ = mimetypes.guess_type(image_path)
             output_media.append({
                 'content': encoded_string,
                 'content_type': mime_type
