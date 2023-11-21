@@ -19,6 +19,10 @@ with open('log_conf.yaml', 'r') as f:
 
 logging.config.dictConfig(confd)
 
+import logging
+logging.basicConfig()
+logging.getLogger('sqlalchemy.engine').setLevel(logging.INFO)
+
 app = FastAPI()
 
 origins = [

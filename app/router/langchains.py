@@ -53,6 +53,7 @@ from app.mongodb.schema.document import DocumentCreate
 from langchain.prompts import PromptTemplate
 from langchain.schema.output_parser import StrOutputParser
 from datetime import date
+from langchain.memory import ConversationBufferMemory
 import time
 import base64
 import mimetypes
@@ -67,7 +68,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_AI_GREETING_MESSAGE = 'Hi there, how can I help you?'
 SUPPORTED_DOCUMENT_TYPES = set(['application/pdf', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'])
 
-def _process_pdf_files(files: List[UploadFile]) -> List[Document]:
+def _process_pdf_files(files: List[UploadFile], conversation_id: str) -> List[Document]:
     documents = []
     pdf_files = [file for file in files if file.content_type == 'application/pdf']
     
@@ -84,6 +85,7 @@ def _process_pdf_files(files: List[UploadFile]) -> List[Document]:
             if 'doc_in' in doc.metadata:
                 continue
             doc.metadata['doc_id'] = str(uuid.uuid4())
+            doc.metadata['conversation_id'] = conversation_id
         documents.extend(docs)
     
     return documents
@@ -98,7 +100,7 @@ def get_xlsx_dataframes(files: List[UploadFile]):
     return dataframes
 
 def load_document_to_vector_store(files: List[UploadFile], conversation_id: str):
-    documents = _process_pdf_files(files)
+    documents = _process_pdf_files(files, conversation_id)
 
     if len(documents) == 0:
         return
@@ -194,10 +196,16 @@ async def conversate(question: Annotated[str, Form()],
             memory.save_context({'input': record.human_message}, {'output': record.ai_message})
 
 
+# (search_kwargs={
+#             'filter': { 'conversation_id': x_conversation_id }
+#         }
+
     queue = Queue()
     qa = ConversationalRetrievalChain.from_llm(
         llm=ChatOpenAIWithTokenCount(temperature=0, verbose=True, streaming=True, callbacks=[QueueCallbackHandler(queue), PostgresCallbackHandler(session, x_conversation_id)]), 
-        retriever=db.as_retriever(),
+        retriever=db.as_retriever(search_kwargs={
+            'filter': { 'conversation_id': x_conversation_id }
+        }),
         condense_question_llm=ChatOpenAIWithTokenCount(temperature=0, verbose=True, streaming=True),
         memory=memory,
         verbose=True,
@@ -232,22 +240,28 @@ async def conversate(question: Annotated[str, Form()],
         question += f"""
         If you have plotted a chart, you don't have to show the chart but save it as {image_path}. 
         Remember to create directory {exported_chart_path} before you save your plot. 
+        Never include the path to image into your answer.
         """
         panda_agent = create_pandas_dataframe_agent(ChatOpenAI(temperature=0, verbose=True), 
                                                         df[0] if len(df) == 1 else df,
                                                         verbose=True, 
                                                         agent_executor_kwargs={'handle_parsing_errors': True},
-                                                        agent_type=AgentType.OPENAI_FUNCTIONS)
+                                                        # return_intermediate_steps=True,
+                                                        return_direct=True,
+                                                        agent_type=AgentType.OPENAI_FUNCTIONS,
+                                                        memory=ConversationBufferMemory())
         
-        return panda_agent.run({'input': question})
+        return panda_agent({'input': question})
 
     branch = RunnableBranch(
-        (lambda x: "dataframe" in x["topic"].lower(), lambda x: run_with_panda_agent(x['question'])),
+        (lambda x: "dataframe" in x["topic"].lower(), lambda x: run_with_panda_agent(x['question'])['output']),
         lambda x: qa(x['question'])['answer']
     )
 
     full_chain = {"topic": chain, "question": lambda x: x["question"]} | branch
     answer = full_chain.invoke({'question': question})
+
+    print(answer)
     
     # Return conversation id (aka session id)
     response.headers['X-Conversation-Id'] = x_conversation_id
