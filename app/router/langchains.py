@@ -57,6 +57,7 @@ from langchain.memory import ConversationBufferMemory
 import time
 import base64
 import mimetypes
+from pathlib import Path
 
 router = APIRouter(
     prefix='/langchains',
@@ -234,13 +235,13 @@ async def conversate(question: Annotated[str, Form()],
 
     timestamp = str(int(time.time()))
     image_name = f'{x_conversation_id}.png'
-    exported_chart_path = f'export/chart/{date.today()}/{timestamp}'
+    exported_chart_path = f'/export/chart/{date.today()}/{timestamp}'
     image_path = f'{exported_chart_path}/{image_name}'
     def run_with_panda_agent(question: str):
         question += f"""
-        If you have plotted a chart, you don't have to show the chart but save it as {image_path}. 
-        Remember to create directory {exported_chart_path} before you save your plot. 
-        Never include the path to image into your answer.
+        If you have plotted a chart, you must not show the chart but you must save it as {image_path}. 
+        Create a directory with the path {exported_chart_path} before you save your image.
+        Also, never include the path to image into your answer.
         """
         panda_agent = create_pandas_dataframe_agent(ChatOpenAI(temperature=0, verbose=True), 
                                                         df[0] if len(df) == 1 else df,
@@ -250,6 +251,9 @@ async def conversate(question: Annotated[str, Form()],
                                                         return_direct=True,
                                                         agent_type=AgentType.OPENAI_FUNCTIONS,
                                                         memory=ConversationBufferMemory())
+        
+        # Manually create a directory first
+        Path(exported_chart_path).mkdir(parents=True, exist_ok=True)
         
         return panda_agent({'input': question})
 
