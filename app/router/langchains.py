@@ -58,6 +58,7 @@ import time
 import base64
 import mimetypes
 from pathlib import Path
+from langchain.prompts import ChatPromptTemplate
 
 router = APIRouter(
     prefix='/langchains',
@@ -250,10 +251,15 @@ async def conversate(question: Annotated[str, Form()],
         # Manually create a directory first
         Path(exported_chart_path).mkdir(parents=True, exist_ok=True)
 
-        return panda_agent({'input': question})
+        answer = panda_agent({'input': question})['output']
 
+        # Add one more chain to rephrase answer
+        prompt = ChatPromptTemplate.from_template("Rephrase the following output so that python code and image name does not appear in your response: {output}")
+        chain = prompt | ChatOpenAIWithTokenCount(temperature=0, verbose=True)
+        output = chain.invoke({"output": answer})
+        return output.content
     branch = RunnableBranch(
-        (lambda x: "dataframe" in x["topic"].lower(), lambda x: run_with_panda_agent(x['question'])['output']),
+        (lambda x: "dataframe" in x["topic"].lower(), lambda x: run_with_panda_agent(x['question'])),
         lambda x: qa(x['question'])['answer']
     )
 
