@@ -196,11 +196,6 @@ async def conversate(question: Annotated[str, Form()],
         for record in chat_records:
             memory.save_context({'input': record.human_message}, {'output': record.ai_message})
 
-
-# (search_kwargs={
-#             'filter': { 'conversation_id': x_conversation_id }
-#         }
-
     queue = Queue()
     qa = ConversationalRetrievalChain.from_llm(
         llm=ChatOpenAIWithTokenCount(temperature=0, verbose=True, streaming=True, callbacks=[QueueCallbackHandler(queue), PostgresCallbackHandler(session, x_conversation_id)]), 
@@ -254,7 +249,7 @@ async def conversate(question: Annotated[str, Form()],
         
         # Manually create a directory first
         Path(exported_chart_path).mkdir(parents=True, exist_ok=True)
-        
+
         return panda_agent({'input': question})
 
     branch = RunnableBranch(
