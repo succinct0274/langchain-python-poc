@@ -25,7 +25,7 @@ services:
       MONGO_INITDB_ROOT_USERNAME: root
       MONGO_INITDB_ROOT_PASSWORD: 123456
 
-  langchain-service:
+  langchain-backend:
     image: langchain-backend:0.0.1
     depends_on: 
       - postgres
@@ -33,20 +33,24 @@ services:
       - mongodb
     ports:
       - 8080:8080
-    command: uvicorn app.main:app --host 0.0.0.0
+    profiles:
+      - do-not-start
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8080
     environment:
       - UNSTRUCTURED_API_URL=http://unstructured-api:8000/general/v0/general
       - SQLALCHEMY_DATABASE_URL=postgresql://postgres:123456@postgres:5432/chatbot
-      - MONGO_DATABASE_URL=mongodb://root:123456@localhost/chatbot?authSource=admin&retryWrites=true&w=majority
+      - MONGO_DATABASE_URL=mongodb://root:123456@mongodb/chatbot?authSource=admin&retryWrites=true&w=majority
 
   langchain-frontend:
     image: langchain-frontend:0.0.1
     depends_on:
-      - langchain-service
+      - langchain-backend
     ports:
       - 3000:3000
+    profiles:
+      - do-not-start
     environment:
-      - LANGCHAIN_SERVER_URL=http://langchain-service:8080/langchains
+      - LANGCHAIN_SERVER_URL=http://langchain-backend:8080
   
   # neo4j:
   #   image: neo4j:4.4.27-community
