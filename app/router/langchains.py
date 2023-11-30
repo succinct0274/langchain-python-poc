@@ -48,7 +48,7 @@ from app.service.langchain.agents.panda_agent import create_pandas_dataframe_age
 from app.service.langchain.models.chat_open_ai_with_token_count import ChatOpenAIWithTokenCount
 from bson import Binary
 from langchain.schema.runnable import RunnableBranch
-from app.mongodb.crud.document import create_document, find_document_by_conversation_id_and_filenames
+from app.mongodb.crud.document import create_document, acreate_document, afind_document_by_conversation_id_and_filenames
 from app.mongodb.schema.document import DocumentCreate
 from langchain.prompts import PromptTemplate
 from langchain.schema.output_parser import StrOutputParser
@@ -59,6 +59,7 @@ import base64
 import mimetypes
 from pathlib import Path
 from langchain.prompts import ChatPromptTemplate
+import asyncio
 
 router = APIRouter(
     prefix='/langchains',
@@ -125,16 +126,16 @@ async def find_conversation(x_conversation_id: Annotated[str, Header()],
                             session: Session=Depends(get_session_local)):
     return find_conversation_historys_by_conversation_id(session, x_conversation_id)
 
-@router.post('/upload')
-async def upload(files: Annotated[List[UploadFile], File()],
-                 x_conversation_id: Annotated[str, Header()],
-                 background_tasks: BackgroundTasks):
+@router.post('/shared/upload')
+def general_upload(files: Annotated[List[UploadFile], File()]):
     content_types = set([file.content_type for file in files])
     supported = content_types.issubset(SUPPORTED_DOCUMENT_TYPES)
     if not supported:
         raise HTTPException(status_code=400, detail='Unsupported document type')
-    
-    existed = await find_document_by_conversation_id_and_filenames(x_conversation_id, [f.filename for f in files])
+
+    shared_knowledge_conversation_id = os.getenv('SHARED_KNOWLEDGE_BASE_UUID')
+
+    existed = afind_document_by_conversation_id_and_filenames(shared_knowledge_conversation_id, [f.filename for f in files])
     existed_filenames = set([persisted['filename'] for persisted in existed])
     docs_for_vector_store = []
     for file in files:
@@ -144,13 +145,37 @@ async def upload(files: Annotated[List[UploadFile], File()],
         docs_for_vector_store.append(file)
         entity = DocumentCreate(content=Binary(file.file.read()), filename=file.filename, mime_type=file.content_type, conversation_id=x_conversation_id)
         file.file.seek(0)
-        await create_document(entity)
+        acreate_document(entity)
+
+    load_document_to_vector_store(docs_for_vector_store, shared_knowledge_conversation_id)
+
+@router.post('/upload')
+def upload(files: Annotated[List[UploadFile], File()],
+                 x_conversation_id: Annotated[str, Header()],
+                 background_tasks: BackgroundTasks):
+    content_types = set([file.content_type for file in files])
+    supported = content_types.issubset(SUPPORTED_DOCUMENT_TYPES)
+    if not supported:
+        raise HTTPException(status_code=400, detail='Unsupported document type')
+    
+    # existed = await afind_document_by_conversation_id_and_filenames(x_conversation_id, [f.filename for f in files])
+    existed = []
+    existed_filenames = set([persisted['filename'] for persisted in existed])
+    docs_for_vector_store = []
+    for file in files:
+        if file.filename in existed_filenames:
+            continue
+
+        docs_for_vector_store.append(file)
+        entity = DocumentCreate(content=Binary(file.file.read()), filename=file.filename, mime_type=file.content_type, conversation_id=x_conversation_id)
+        file.file.seek(0)
+        create_document(entity)
 
     load_document_to_vector_store(docs_for_vector_store, x_conversation_id)
     # background_tasks.add_task(load_document_to_vector_store, docs_for_vector_store, x_conversation_id)
 
 @router.post('/conversate')
-async def conversate(question: Annotated[str, Form()], 
+def conversate(question: Annotated[str, Form()], 
                      background_tasks: BackgroundTasks,
                      response: Response,
                      files: Annotated[List[UploadFile], File()]=[], 
@@ -172,7 +197,8 @@ async def conversate(question: Annotated[str, Form()],
     file_detail = []
     for file in files:
         file_detail.append({'filename': file.filename, 'mime_type': file.content_type})
-    await upload(files, x_conversation_id, background_tasks)
+
+    upload(files, x_conversation_id, background_tasks)
 
     # Make vector store asynchronous
     hf_embedding = HuggingFaceEmbeddings(
