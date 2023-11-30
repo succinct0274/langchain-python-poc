@@ -15,7 +15,6 @@ from langchain.vectorstores.chroma import Chroma
 from langchain.retrievers.document_compressors import LLMChainFilter
 from langchain.retrievers import ContextualCompressionRetriever, ParentDocumentRetriever
 from langchain.embeddings import HuggingFaceEmbeddings
-from langchain.storage.in_memory import InMemoryStore
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.memory import ConversationBufferMemory, ConversationKGMemory, ConversationSummaryBufferMemory
 from langchain.chains import ConversationalRetrievalChain
@@ -48,7 +47,7 @@ from app.service.langchain.agents.panda_agent import create_pandas_dataframe_age
 from app.service.langchain.models.chat_open_ai_with_token_count import ChatOpenAIWithTokenCount
 from bson import Binary
 from langchain.schema.runnable import RunnableBranch
-from app.mongodb.crud.document import create_document, acreate_document, afind_document_by_conversation_id_and_filenames
+from app.mongodb.crud.document import create_document, acreate_document, find_document_by_conversation_id_and_filenames
 from app.mongodb.schema.document import DocumentCreate
 from langchain.prompts import PromptTemplate
 from langchain.schema.output_parser import StrOutputParser
@@ -115,7 +114,7 @@ def load_document_to_vector_store(files: List[UploadFile], conversation_id: str)
     )
 
     db = PGVectorWithMetadata(os.getenv('SQLALCHEMY_DATABASE_URL'), 
-                              embedding_function=hf_embedding, 
+                              embedding_function=OpenAIEmbeddings(), 
                               distance_strategy=DistanceStrategy.EUCLIDEAN,
                               collection_metadata={'conversation_id': conversation_id})
     
@@ -135,7 +134,7 @@ def general_upload(files: Annotated[List[UploadFile], File()]):
 
     shared_knowledge_conversation_id = os.getenv('SHARED_KNOWLEDGE_BASE_UUID')
 
-    existed = afind_document_by_conversation_id_and_filenames(shared_knowledge_conversation_id, [f.filename for f in files])
+    existed = find_document_by_conversation_id_and_filenames(shared_knowledge_conversation_id, [f.filename for f in files])
     existed_filenames = set([persisted['filename'] for persisted in existed])
     docs_for_vector_store = []
     for file in files:
@@ -158,8 +157,7 @@ def upload(files: Annotated[List[UploadFile], File()],
     if not supported:
         raise HTTPException(status_code=400, detail='Unsupported document type')
     
-    # existed = await afind_document_by_conversation_id_and_filenames(x_conversation_id, [f.filename for f in files])
-    existed = []
+    existed = find_document_by_conversation_id_and_filenames(x_conversation_id, [f.filename for f in files])
     existed_filenames = set([persisted['filename'] for persisted in existed])
     docs_for_vector_store = []
     for file in files:
@@ -201,21 +199,21 @@ def conversate(question: Annotated[str, Form()],
     upload(files, x_conversation_id, background_tasks)
 
     # Make vector store asynchronous
-    hf_embedding = HuggingFaceEmbeddings(
-        model_name='sentence-transformers/all-MiniLM-L6-v2',
-        encode_kwargs={'normalize_embeddings': False}
-    )
+    # hf_embedding = HuggingFaceEmbeddings(
+    #     model_name='sentence-transformers/all-MiniLM-L6-v2',
+    #     encode_kwargs={'normalize_embeddings': False}
+    # )
 
     db = PGVectorWithMetadata(os.getenv('SQLALCHEMY_DATABASE_URL'), 
-                              embedding_function=hf_embedding, 
+                              embedding_function=OpenAIEmbeddings(), 
                               distance_strategy=DistanceStrategy.EUCLIDEAN,
                               collection_metadata={'conversation_id': x_conversation_id})
 
     # Instantiate the summary llm and set the max length of output to 300
-    summarization_model_name = 'pszemraj/led-large-book-summary'
-    summarization_llm = HuggingFacePipeline(pipeline=pipeline('summarization', summarization_model_name, max_length=300))
+    # summarization_model_name = 'pszemraj/led-large-book-summary'
+    # summarization_llm = HuggingFacePipeline(pipeline=pipeline('summarization', summarization_model_name, max_length=300))
 
-    memory = ConversationSummaryBufferMemory(llm=summarization_llm, memory_key='chat_history', return_messages=True, verbose=True)
+    memory = ConversationSummaryBufferMemory(llm=llm, memory_key='chat_history', return_messages=True, verbose=True, output_key='answer')
 
     # Load conversation history from the database if corresponding header provided
     if x_conversation_id is not None:
@@ -232,6 +230,7 @@ def conversate(question: Annotated[str, Form()],
         condense_question_llm=ChatOpenAIWithTokenCount(temperature=0, verbose=True, streaming=True),
         memory=memory,
         verbose=True,
+        return_source_documents=True,
     )
 
     df = get_xlsx_dataframes(files)
