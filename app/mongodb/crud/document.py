@@ -7,6 +7,7 @@ from pymongo.cursor import Cursor
 from pymongo import MongoClient
 from gridfs.grid_file import GridOut
 from motor.motor_asyncio import AsyncIOMotorCursor, AsyncIOMotorGridFSBucket
+from uuid import UUID
 
 document_collection: Collection = async_db.get_collection('user_document_collection')
 
@@ -17,6 +18,10 @@ def create_document(doc: DocumentCreate):
 
 def find_document_by_conversation_id_and_filenames(conversation_id: str, filenames: List[str]) -> List[GridOut]:
     cursor = fs.find({"metadata.conversation_id": conversation_id, "filename": {'$in': filenames}})
+    return list(cursor)
+
+def find_document_by_conversation_id(conversation_id: UUID) -> List[GridOut]:
+    cursor = fs.find({'metadata.conversation_id': str(conversation_id)})
     return list(cursor)
 
 async def acreate_document(doc: DocumentCreate) -> dict:

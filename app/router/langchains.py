@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from typing import Annotated, List, Union, Optional
 from uuid import UUID
-from fastapi import FastAPI, Form, UploadFile, File, HTTPException, Header
+from fastapi import FastAPI, Form, UploadFile, File, HTTPException, Header, Path
 from app.service.langchain.model import get_langchain_model
 from langchain.embeddings.openai import OpenAIEmbeddings
 from langchain.agents import Tool, AgentExecutor, BaseMultiActionAgent
@@ -48,7 +48,7 @@ from app.service.langchain.agents.panda_agent import create_pandas_dataframe_age
 from app.service.langchain.models.chat_open_ai_with_token_count import ChatOpenAIWithTokenCount
 from bson import Binary
 from langchain.schema.runnable import RunnableBranch
-from app.mongodb.crud.document import create_document, acreate_document, find_document_by_conversation_id_and_filenames
+from app.mongodb.crud.document import create_document, acreate_document, find_document_by_conversation_id_and_filenames, find_document_by_conversation_id
 from app.mongodb.schema.document import DocumentCreate
 from langchain.prompts import PromptTemplate
 from langchain.schema.output_parser import StrOutputParser
@@ -59,7 +59,7 @@ import base64
 import mimetypes
 from pathlib import Path
 from langchain.prompts import ChatPromptTemplate
-import asyncio
+from datetime import datetime
 import re
 
 router = APIRouter(
@@ -133,6 +133,19 @@ def general_upload(files: Annotated[List[UploadFile], File()],
                    response: Response):
     shared_conversation_id = os.getenv('SHARED_KNOWLEDGE_BASE_UUID')
     upload(files, response, shared_conversation_id)
+
+@router.get('/{conversation_id}/files')
+def find_files_by_conversation_id(conversation_id: Annotated[UUID, Path(title="The conversation id for session")]):
+    files = find_document_by_conversation_id(conversation_id)
+    res = []
+    for file in files:
+        res.append({
+            'filename': file.filename,
+            'upload_date': int(datetime.timestamp(file.upload_date)) * 1000,
+            'content_type': file.metadata['mime_type']
+        })
+
+    return res
 
 @router.post('/upload')
 def upload(files: Annotated[List[UploadFile], File()],
