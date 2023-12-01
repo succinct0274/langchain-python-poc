@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends
 from typing import Annotated, List, Union, Optional
+from uuid import UUID
 from fastapi import FastAPI, Form, UploadFile, File, HTTPException, Header
 from app.service.langchain.model import get_langchain_model
 from langchain.embeddings.openai import OpenAIEmbeddings
@@ -59,6 +60,7 @@ import mimetypes
 from pathlib import Path
 from langchain.prompts import ChatPromptTemplate
 import asyncio
+import re
 
 router = APIRouter(
     prefix='/langchains',
@@ -67,6 +69,7 @@ router = APIRouter(
 
 logger = logging.getLogger(__name__)
 
+UUID_PATTERN = re.compile(r'^[\da-f]{8}-([\da-f]{4}-){3}[\da-f]{12}$', re.IGNORECASE)
 DEFAULT_AI_GREETING_MESSAGE = 'Hi there, how can I help you?'
 SUPPORTED_DOCUMENT_TYPES = set(['application/pdf', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'])
 
@@ -108,10 +111,10 @@ def load_document_to_vector_store(files: List[UploadFile], conversation_id: str)
         return
     
     # Make vector store asynchronous
-    hf_embedding = HuggingFaceEmbeddings(
-        model_name='sentence-transformers/all-MiniLM-L6-v2',
-        encode_kwargs={'normalize_embeddings': False}
-    )
+    # hf_embedding = HuggingFaceEmbeddings(
+    #     model_name='sentence-transformers/all-MiniLM-L6-v2',
+    #     encode_kwargs={'normalize_embeddings': False}
+    # )
 
     db = PGVectorWithMetadata(os.getenv('SQLALCHEMY_DATABASE_URL'), 
                               embedding_function=OpenAIEmbeddings(), 
@@ -150,8 +153,15 @@ def general_upload(files: Annotated[List[UploadFile], File()]):
 
 @router.post('/upload')
 def upload(files: Annotated[List[UploadFile], File()],
-                 x_conversation_id: Annotated[str, Header()],
-                 background_tasks: BackgroundTasks):
+           background_tasks: BackgroundTasks,
+           response: Response,
+           x_conversation_id: Annotated[str, Header()] = None):
+    if x_conversation_id is None:
+        x_conversation_id = str(uuid.uuid4())
+
+    if x_conversation_id is not None and not bool(UUID_PATTERN.match(x_conversation_id)):
+        raise HTTPException(status_code=422, detail="Invalid session id")
+
     content_types = set([file.content_type for file in files])
     supported = content_types.issubset(SUPPORTED_DOCUMENT_TYPES)
     if not supported:
@@ -170,6 +180,8 @@ def upload(files: Annotated[List[UploadFile], File()],
         create_document(entity)
 
     load_document_to_vector_store(docs_for_vector_store, x_conversation_id)
+
+    response.headers['X-Conversation-Id'] = x_conversation_id
     # background_tasks.add_task(load_document_to_vector_store, docs_for_vector_store, x_conversation_id)
 
 @router.post('/conversate')
