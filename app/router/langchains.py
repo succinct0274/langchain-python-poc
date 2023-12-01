@@ -129,31 +129,13 @@ async def find_conversation(x_conversation_id: Annotated[str, Header()],
     return find_conversation_historys_by_conversation_id(session, x_conversation_id)
 
 @router.post('/shared/upload')
-def general_upload(files: Annotated[List[UploadFile], File()]):
-    content_types = set([file.content_type for file in files])
-    supported = content_types.issubset(SUPPORTED_DOCUMENT_TYPES)
-    if not supported:
-        raise HTTPException(status_code=400, detail='Unsupported document type')
-
-    shared_knowledge_conversation_id = os.getenv('SHARED_KNOWLEDGE_BASE_UUID')
-
-    existed = find_document_by_conversation_id_and_filenames(shared_knowledge_conversation_id, [f.filename for f in files])
-    existed_filenames = set([persisted['filename'] for persisted in existed])
-    docs_for_vector_store = []
-    for file in files:
-        if file.filename in existed_filenames:
-            continue
-
-        docs_for_vector_store.append(file)
-        entity = DocumentCreate(content=Binary(file.file.read()), filename=file.filename, mime_type=file.content_type, conversation_id=x_conversation_id)
-        file.file.seek(0)
-        acreate_document(entity)
-
-    load_document_to_vector_store(docs_for_vector_store, shared_knowledge_conversation_id)
+def general_upload(files: Annotated[List[UploadFile], File()],
+                   response: Response):
+    shared_conversation_id = os.getenv('SHARED_KNOWLEDGE_BASE_UUID')
+    upload(files, response, shared_conversation_id)
 
 @router.post('/upload')
 def upload(files: Annotated[List[UploadFile], File()],
-           background_tasks: BackgroundTasks,
            response: Response,
            x_conversation_id: Annotated[str, Header()] = None):
     if x_conversation_id is None:
