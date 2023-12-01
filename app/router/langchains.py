@@ -150,7 +150,7 @@ def upload(files: Annotated[List[UploadFile], File()],
         raise HTTPException(status_code=400, detail='Unsupported document type')
     
     existed = find_document_by_conversation_id_and_filenames(x_conversation_id, [f.filename for f in files])
-    existed_filenames = set([persisted['filename'] for persisted in existed])
+    existed_filenames = set([persisted.filename for persisted in existed])
     docs_for_vector_store = []
     for file in files:
         if file.filename in existed_filenames:
@@ -201,7 +201,7 @@ def conversate(question: Annotated[str, Form()],
     db = PGVectorWithMetadata(os.getenv('SQLALCHEMY_DATABASE_URL'), 
                               embedding_function=OpenAIEmbeddings(), 
                               distance_strategy=DistanceStrategy.EUCLIDEAN,
-                              collection_metadata={'conversation_id': x_conversation_id})
+                              collection_metadata={'conversation_id': {"in": [os.getenv('SHARED_KNOWLEDGE_BASE_UUID'), x_conversation_id]}})
 
     # Instantiate the summary llm and set the max length of output to 300
     # summarization_model_name = 'pszemraj/led-large-book-summary'
