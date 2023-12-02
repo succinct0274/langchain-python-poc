@@ -134,6 +134,10 @@ def general_upload(files: Annotated[List[UploadFile], File()],
     shared_conversation_id = os.getenv('SHARED_KNOWLEDGE_BASE_UUID')
     upload(files, response, shared_conversation_id)
 
+@router.get('/shared/files')
+def find_shared_files():
+    return find_files_by_conversation_id(os.getenv('SHARED_KNOWLEDGE_BASE_UUID'))
+
 @router.get('/{conversation_id}/files')
 def find_files_by_conversation_id(conversation_id: Annotated[UUID, Path(title="The conversation id for session")]):
     files = find_document_by_conversation_id(conversation_id)
