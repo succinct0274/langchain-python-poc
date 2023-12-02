@@ -15,7 +15,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
       - name: Build the docker image
-        working-directory: ./langchain-python-poc
         run: |
           docker build . -t ${REGISTRY_API_URL}/${REGISTRY_NAME}/openai/langchain-backend:0.0.1
       - name: Publish the docker image
