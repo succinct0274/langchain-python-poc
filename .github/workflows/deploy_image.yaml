@@ -1,0 +1,24 @@
+name: Deploy image to private registry
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    env:
+        REGISTRY_API_USERNAME: ${{ secrets.REGISTRY_API_USERNAME }}
+        REGISTRY_API_TOKEN: ${{ secrets.REGISTRY_API_TOKEN }}
+        REGISTRY_API_URL: ${{ vars.REGISTRY_API_URL }}
+        REGISTRY_NAME: ${{ vars.REGISTRY_NAME }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Build the docker image
+        working-directory: ./langchain-python-poc
+        run: |
+          docker build . -t ${REGISTRY_API_URL}/${REGISTRY_NAME}/openai/langchain-backend:0.0.1
+      - name: Publish the docker image
+        run: |
+          docker login ${REGISTRY_API_URL} -u ${REGISTRY_API_USERNAME} -p ${REGISTRY_API_TOKEN}
+          docker image push ${REGISTRY_API_URL}/${REGISTRY_NAME}/openai/langchain-backend:0.0.1
