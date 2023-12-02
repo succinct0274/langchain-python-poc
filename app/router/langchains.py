@@ -116,7 +116,7 @@ def load_document_to_vector_store(files: List[UploadFile], conversation_id: str)
     #     encode_kwargs={'normalize_embeddings': False}
     # )
 
-    db = PGVectorWithMetadata(os.getenv('SQLALCHEMY_DATABASE_URL'), 
+    db = PGVector(os.getenv('SQLALCHEMY_DATABASE_URL'), 
                               embedding_function=OpenAIEmbeddings(), 
                               distance_strategy=DistanceStrategy.EUCLIDEAN,
                               collection_metadata={'conversation_id': conversation_id})
@@ -207,7 +207,7 @@ def conversate(question: Annotated[str, Form()],
     for file in files:
         file_detail.append({'filename': file.filename, 'mime_type': file.content_type})
 
-    upload(files, x_conversation_id, background_tasks)
+    upload(files, response, x_conversation_id)
 
     # Make vector store asynchronous
     # hf_embedding = HuggingFaceEmbeddings(
@@ -215,10 +215,10 @@ def conversate(question: Annotated[str, Form()],
     #     encode_kwargs={'normalize_embeddings': False}
     # )
 
-    db = PGVectorWithMetadata(os.getenv('SQLALCHEMY_DATABASE_URL'), 
+    db = PGVector(os.getenv('SQLALCHEMY_DATABASE_URL'), 
                               embedding_function=OpenAIEmbeddings(), 
                               distance_strategy=DistanceStrategy.EUCLIDEAN,
-                              collection_metadata={'conversation_id': {"in": [os.getenv('SHARED_KNOWLEDGE_BASE_UUID'), x_conversation_id]}})
+                              collection_metadata={'conversation_id': x_conversation_id})
 
     # Instantiate the summary llm and set the max length of output to 300
     # summarization_model_name = 'pszemraj/led-large-book-summary'
@@ -236,7 +236,7 @@ def conversate(question: Annotated[str, Form()],
     qa = ConversationalRetrievalChain.from_llm(
         llm=ChatOpenAIWithTokenCount(temperature=0, verbose=True, streaming=True, callbacks=[QueueCallbackHandler(queue), PostgresCallbackHandler(session, x_conversation_id)]), 
         retriever=db.as_retriever(search_kwargs={
-            'filter': { 'conversation_id': x_conversation_id }
+            'filter': { 'conversation_id': {"in": [os.getenv('SHARED_KNOWLEDGE_BASE_UUID'), x_conversation_id]} }
         }),
         condense_question_llm=ChatOpenAIWithTokenCount(temperature=0, verbose=True, streaming=True),
         memory=memory,
