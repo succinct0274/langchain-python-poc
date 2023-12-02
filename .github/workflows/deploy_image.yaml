@@ -19,5 +19,6 @@ jobs:
           docker build . -t ${REGISTRY_API_URL}/${REGISTRY_NAME}/openai/langchain-backend:0.0.1
       - name: Publish the docker image
         run: |
-          docker login ${REGISTRY_API_URL} -u ${REGISTRY_API_USERNAME} -p ${REGISTRY_API_TOKEN}
+          echo ${REGISTRY_API_TOKEN} | xargs docker login ${REGISTRY_API_URL} -u {} -p {}
           docker image push ${REGISTRY_API_URL}/${REGISTRY_NAME}/openai/langchain-backend:0.0.1
+          docker logout ${REGISTRY_API_URL}
