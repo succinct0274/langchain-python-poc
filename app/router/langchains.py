@@ -54,7 +54,7 @@ from pathlib import Path
 from langchain.prompts import ChatPromptTemplate
 from datetime import datetime
 import re
-from langchain.document_loaders import PyPDFLoader
+from langchain.document_loaders import PyMuPDFLoader
 from io import BytesIO
 import tempfile
 
@@ -82,7 +82,7 @@ def _process_pdf_files(files: List[UploadFile], conversation_id: str) -> List[Do
             with os.fdopen(fd, 'wb') as tmp:
                 tmp.write(pdf.file.read())
                 pdf.file.seek(0)
-                loader = PyPDFLoader(path)
+                loader = PyMuPDFLoader(path)
                 docs = loader.load_and_split(CharacterTextSplitter(separator="\n",
                                                                    chunk_size=800,
                                                                    chunk_overlap=100,
