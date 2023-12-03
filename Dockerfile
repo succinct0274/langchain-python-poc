@@ -8,7 +8,7 @@ WORKDIR /app/chatbot-server
 
 RUN pip install -r requirements.txt
 
-RUN python ./script/download_model.py
+# RUN python ./script/download_model.py
 
 EXPOSE 8080
 
