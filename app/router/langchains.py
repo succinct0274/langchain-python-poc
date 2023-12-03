@@ -54,6 +54,10 @@ from pathlib import Path
 from langchain.prompts import ChatPromptTemplate
 from datetime import datetime
 import re
+from langchain.document_loaders import PyPDFLoader
+from io import BytesIO
+import tempfile
+
 
 router = APIRouter(
     prefix='/langchains',
@@ -72,13 +76,26 @@ def _process_pdf_files(files: List[UploadFile], conversation_id: str) -> List[Do
     
     for pdf in pdf_files:
         from langchain.text_splitter import CharacterTextSplitter
-    
-        loader = UnstructuredAPIFileIOLoader(pdf.file, url=os.getenv('UNSTRUCTURED_API_URL'), metadata_filename=pdf.filename)
-        docs = loader.load_and_split(text_splitter = CharacterTextSplitter(separator="\n",
-                                                                           chunk_size=800,
-                                                                           chunk_overlap=100,
-                                                                           length_function=len)
-                                                                           )
+
+        fd, path = tempfile.mkstemp()
+        try:
+            with os.fdopen(fd, 'wb') as tmp:
+                tmp.write(pdf.file.read())
+                pdf.file.seek(0)
+                loader = PyPDFLoader(path)
+                docs = loader.load_and_split(CharacterTextSplitter(separator="\n",
+                                                                   chunk_size=800,
+                                                                   chunk_overlap=100,
+                                                                   length_function=len))
+        finally:
+            os.remove(path)
+
+        # loader = UnstructuredAPIFileIOLoader(pdf.file, url=os.getenv('UNSTRUCTURED_API_URL'), metadata_filename=pdf.filename)
+        # docs = loader.load_and_split(text_splitter = CharacterTextSplitter(separator="\n",
+        #                                                                    chunk_size=800,
+        #                                                                    chunk_overlap=100,
+        #                                                                    length_function=len)
+        #                                                                    )
         for doc in docs:
             if 'doc_in' in doc.metadata:
                 continue
