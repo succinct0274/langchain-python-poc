@@ -240,7 +240,7 @@ def conversate(question: Annotated[str, Form()],
     if x_conversation_id is not None:
         chat_records = find_conversation_historys_by_conversation_id(session, x_conversation_id)
         for record in chat_records:
-            memory.save_context({'input': record.human_message}, {'output': record.ai_message})
+            memory.save_context({'input': record.human_message}, {'answer': record.ai_message})
 
     queue = Queue()
     qa = ConversationalRetrievalChain.from_llm(
