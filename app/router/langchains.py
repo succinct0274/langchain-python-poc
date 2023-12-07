@@ -83,10 +83,19 @@ def _process_pdf_files(files: List[UploadFile], conversation_id: str) -> List[Do
                 tmp.write(pdf.file.read())
                 pdf.file.seek(0)
                 loader = PyMuPDFLoader(path)
+                # Attempt to parse file into docs without ocr
                 docs = loader.load_and_split(CharacterTextSplitter(separator="\n",
                                                                    chunk_size=800,
                                                                    chunk_overlap=100,
                                                                    length_function=len))
+                
+                if len(docs) == 0:
+                    loader = PyMuPDFLoader(path, extract_images=True)
+                    docs = loader.load_and_split(CharacterTextSplitter(separator="\n",
+                                                                   chunk_size=800,
+                                                                   chunk_overlap=100,
+                                                                   length_function=len))
+                
         finally:
             os.remove(path)
 
@@ -101,6 +110,7 @@ def _process_pdf_files(files: List[UploadFile], conversation_id: str) -> List[Do
                 continue
             doc.metadata['doc_id'] = str(uuid.uuid4())
             doc.metadata['conversation_id'] = conversation_id
+            doc.metadata['filename'] = pdf.filename
         documents.extend(docs)
     
     return documents
