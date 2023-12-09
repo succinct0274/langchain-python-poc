@@ -58,17 +58,12 @@ from langchain.document_loaders import PyMuPDFLoader
 from io import BytesIO
 import tempfile
 
-
-router = APIRouter(
-    prefix='/langchains',
-    tags=['langchains'],
-)
-
 logger = logging.getLogger(__name__)
 
 UUID_PATTERN = re.compile(r'^[\da-f]{8}-([\da-f]{4}-){3}[\da-f]{12}$', re.IGNORECASE)
 DEFAULT_AI_GREETING_MESSAGE = 'Hi there, how can I help you?'
 SUPPORTED_DOCUMENT_TYPES = set(['application/pdf', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'])
+
 
 def _process_pdf_files(files: List[UploadFile], conversation_id: str) -> List[Document]:
     documents = []
@@ -143,50 +138,14 @@ def load_document_to_vector_store(files: List[UploadFile], conversation_id: str)
     
     db.add_documents(documents)
 
-@router.get('/conversate')
-async def find_conversation(x_conversation_id: Annotated[str, Header()],
-                            session: Session=Depends(get_session_local)):
-    return find_conversation_historys_by_conversation_id(session, x_conversation_id)
+def find_conversation_historys(db_session: Session, conversation_id: str):
+    return find_conversation_historys_by_conversation_id(db_session, conversation_id)
 
-@router.post('/shared/upload')
-def general_upload(files: Annotated[List[UploadFile], File()],
-                   response: Response):
-    shared_conversation_id = os.getenv('SHARED_KNOWLEDGE_BASE_UUID')
-    upload(files, response, shared_conversation_id)
+def find_document_by_conversation_id_and_filenames(db_session: Session, conversation_id: str, filenames: List[str]):
+    return find_document_by_conversation_id_and_filenames(db_session, conversation_id, filenames)
 
-@router.get('/shared/files')
-def find_shared_files():
-    return find_files_by_conversation_id(os.getenv('SHARED_KNOWLEDGE_BASE_UUID'))
-
-@router.get('/{conversation_id}/files')
-def find_files_by_conversation_id(conversation_id: Annotated[UUID, Path(title="The conversation id for session")]):
-    files = find_document_by_conversation_id(conversation_id)
-    res = []
-    for file in files:
-        res.append({
-            'filename': file.filename,
-            'upload_date': int(datetime.timestamp(file.upload_date)) * 1000,
-            'content_type': file.metadata['mime_type']
-        })
-
-    return res
-
-@router.post('/upload')
-def upload(files: Annotated[List[UploadFile], File()],
-           response: Response,
-           x_conversation_id: Annotated[str, Header()] = None):
-    if x_conversation_id is None:
-        x_conversation_id = str(uuid.uuid4())
-
-    if x_conversation_id is not None and not bool(UUID_PATTERN.match(x_conversation_id)):
-        raise HTTPException(status_code=422, detail="Invalid session id")
-
-    content_types = set([file.content_type for file in files])
-    supported = content_types.issubset(SUPPORTED_DOCUMENT_TYPES)
-    if not supported:
-        raise HTTPException(status_code=400, detail='Unsupported document type')
-    
-    existed = find_document_by_conversation_id_and_filenames(x_conversation_id, [f.filename for f in files])
+def upload_files(files: List[UploadFile], conversation_id: str = None):
+    existed = find_document_by_conversation_id_and_filenames(conversation_id, [f.filename for f in files])
     existed_filenames = set([persisted.filename for persisted in existed])
     docs_for_vector_store = []
     for file in files:
@@ -194,61 +153,37 @@ def upload(files: Annotated[List[UploadFile], File()],
             continue
 
         docs_for_vector_store.append(file)
-        entity = DocumentCreate(content=Binary(file.file.read()), filename=file.filename, mime_type=file.content_type, conversation_id=x_conversation_id)
+        entity = DocumentCreate(content=Binary(file.file.read()), filename=file.filename, mime_type=file.content_type, conversation_id=conversation_id)
         file.file.seek(0)
         create_document(entity)
-
-    load_document_to_vector_store(docs_for_vector_store, x_conversation_id)
-
-    response.headers['X-Conversation-Id'] = x_conversation_id
-    # background_tasks.add_task(load_document_to_vector_store, docs_for_vector_store, x_conversation_id)
-
-@router.post('/conversate')
-def conversate(question: Annotated[str, Form()], 
-                     background_tasks: BackgroundTasks,
-                     response: Response,
-                     files: Annotated[List[UploadFile], File()]=[], 
-                     x_conversation_id: Annotated[Union[str, None], Header()]=None,
-                     llm=Depends(get_langchain_model),
-                     session: Session=Depends(get_session_local)):
-    content_types = set([file.content_type for file in files])
-    supported = content_types.issubset(SUPPORTED_DOCUMENT_TYPES)
-    if not supported:
-        raise HTTPException(status_code=400, detail='Unsupported document type')
     
-    # Generate session id for embedding and chat history store
-    if x_conversation_id is None:
-        x_conversation_id = str(uuid.uuid4())
+    load_document_to_vector_store(docs_for_vector_store, conversation_id)
 
-    print(f'Question: {question}')
-
+def conversate_with_llm(db_session: Session, 
+                        question: str,
+                        files: List[UploadFile],
+                        conversation_id: str,
+                        llm: ChatOpenAI,
+                        background_tasks: BackgroundTasks | None):
+    logger.info(f"Question: {question}")
+    
     # Process files uploaded into text
     file_detail = []
     for file in files:
         file_detail.append({'filename': file.filename, 'mime_type': file.content_type})
 
-    upload(files, response, x_conversation_id)
-
-    # Make vector store asynchronous
-    # hf_embedding = HuggingFaceEmbeddings(
-    #     model_name='sentence-transformers/all-MiniLM-L6-v2',
-    #     encode_kwargs={'normalize_embeddings': False}
-    # )
+    upload_files(files, conversation_id)
 
     db = PGVector(os.getenv('SQLALCHEMY_DATABASE_URL'), 
-                              embedding_function=OpenAIEmbeddings(), 
-                              distance_strategy=DistanceStrategy.EUCLIDEAN,
-                              collection_metadata={'conversation_id': x_conversation_id})
-
-    # Instantiate the summary llm and set the max length of output to 300
-    # summarization_model_name = 'pszemraj/led-large-book-summary'
-    # summarization_llm = HuggingFacePipeline(pipeline=pipeline('summarization', summarization_model_name, max_length=300))
+                            embedding_function=OpenAIEmbeddings(), 
+                            distance_strategy=DistanceStrategy.EUCLIDEAN,
+                            collection_metadata={'conversation_id': conversation_id})
 
     memory = ConversationSummaryBufferMemory(llm=llm, memory_key='chat_history', return_messages=True, verbose=True, output_key='answer')
 
     # Load conversation history from the database if corresponding header provided
-    if x_conversation_id is not None:
-        chat_records = find_conversation_historys_by_conversation_id(session, x_conversation_id)
+    if conversation_id is not None:
+        chat_records = find_conversation_historys(db_session, conversation_id)
         for record in chat_records:
             memory.save_context({'input': record.human_message}, {'answer': record.ai_message})
 
@@ -286,7 +221,7 @@ def conversate(question: Annotated[str, Form()],
     )
 
     timestamp = str(int(time.time()))
-    image_name = f'{x_conversation_id}.png'
+    image_name = f'{conversation_id}.png'
     exported_chart_path = f'/export/chart/{date.today()}/{timestamp}'
     image_path = f'{exported_chart_path}/{image_name}'
     def run_with_panda_agent(question: str):
@@ -314,6 +249,7 @@ def conversate(question: Annotated[str, Form()],
         chain = prompt | ChatOpenAIWithTokenCount(temperature=0, verbose=True)
         output = chain.invoke({"output": answer})
         return output.content
+    
     branch = RunnableBranch(
         (lambda x: "dataframe" in x["topic"].lower(), lambda x: run_with_panda_agent(x['question'])),
         lambda x: qa(x['question'])['answer']
@@ -322,10 +258,7 @@ def conversate(question: Annotated[str, Form()],
     full_chain = {"topic": chain, "question": lambda x: x["question"]} | branch
     answer = full_chain.invoke({'question': question})
 
-    print(answer)
-    
-    # Return conversation id (aka session id)
-    response.headers['X-Conversation-Id'] = x_conversation_id
+    logger.info(f"Answer : {answer}")
 
     res = { 'text': answer }
 
@@ -341,27 +274,12 @@ def conversate(question: Annotated[str, Form()],
             })
             res['image'] = output_media
 
-    # Save current conversation message to the database
-    background_tasks.add_task(create_conversation_history, session, ConversationHistoryCreate(conversation_id=x_conversation_id, 
-                                                                                              human_message=question, 
-                                                                                              ai_message=answer, 
-                                                                                              uploaded_file_detail=file_detail,
-                                                                                              responded_media=output_media))
+    if background_tasks is not None:
+        # Save current conversation message to the database
+        background_tasks.add_task(create_conversation_history, db_session, ConversationHistoryCreate(conversation_id=conversation_id, 
+                                                                                                     human_message=question, 
+                                                                                                     ai_message=answer, 
+                                                                                                     uploaded_file_detail=file_detail,
+                                                                                                     responded_media=output_media))
+
     return res
-
-@router.post('/session/init')
-async def init_session(session: Session=Depends(get_session_local)):
-    sid = uuid.uuid4()
-
-    while exists_conversation_historys_by_conversation_id(session, sid):
-        sid = uuid.uuid4()
-
-    create_conversation_history(session, ConversationHistoryCreate(conversation_id=sid,
-                                                                   human_message='Hi',
-                                                                   ai_message=DEFAULT_AI_GREETING_MESSAGE,
-                                                                   greeting=True))
-    
-    return {
-        'conversation_id': sid,
-        'ai_message': DEFAULT_AI_GREETING_MESSAGE,
-    }
