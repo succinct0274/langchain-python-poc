@@ -93,6 +93,6 @@ async def ws_conversate(websocket: WebSocket,
         while True:
             body = await websocket.receive_json()
             result = await run_in_threadpool(langchain_service.handle_websocket_request, body, llm, background_tasks, x_conversation_id, db_session)
-            print(result)
+            await websocket.send_json(result)
     except WebSocketDisconnect:
         logger.info('Client disconnected')
