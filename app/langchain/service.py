@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends
-from typing import Annotated, List, Union, Optional
+from typing import Annotated, List, Union, Optional, Dict
 from uuid import UUID
 from fastapi import FastAPI, Form, UploadFile, File, HTTPException, Header, Path
 from app.service.langchain.model import get_langchain_model
@@ -141,11 +141,12 @@ def load_document_to_vector_store(files: List[UploadFile], conversation_id: str)
 def find_conversation_historys(db_session: Session, conversation_id: str):
     return find_conversation_historys_by_conversation_id(db_session, conversation_id)
 
-def find_document_by_conversation_id_and_filenames(db_session: Session, conversation_id: str, filenames: List[str]):
-    return find_document_by_conversation_id_and_filenames(db_session, conversation_id, filenames)
+def find_document(conversation_id: str, filenames: List[str]):
+    return find_document_by_conversation_id_and_filenames(conversation_id, filenames)
 
 def upload_files(files: List[UploadFile], conversation_id: str = None):
-    existed = find_document_by_conversation_id_and_filenames(conversation_id, [f.filename for f in files])
+    filenames = [f.filename for f in files]
+    existed = find_document(conversation_id, filenames)
     existed_filenames = set([persisted.filename for persisted in existed])
     docs_for_vector_store = []
     for file in files:
@@ -283,3 +284,12 @@ def conversate_with_llm(db_session: Session,
                                                                                                      responded_media=output_media))
 
     return res
+
+def handle_websocket_request(body: Dict[str, any], 
+                             llm: ChatOpenAIWithTokenCount,
+                             background_tasks: BackgroundTasks,
+                             x_conversation_id: Annotated[str, Header()],
+                             db_session: Session=Depends(get_session_local)):
+    question = body['question']
+    result = conversate_with_llm(db_session, question, [], x_conversation_id, llm, background_tasks)
+    return result

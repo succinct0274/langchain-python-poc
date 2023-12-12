@@ -1,7 +1,7 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, WebSocketDisconnect
 from typing import Annotated, List, Union, Optional
 from uuid import UUID
-from fastapi import FastAPI, Form, UploadFile, File, HTTPException, Header, Path
+from fastapi import FastAPI, Form, UploadFile, File, HTTPException, Header, Path, WebSocket
 from app.service.langchain.model import get_langchain_model
 import pandas as pd
 import os
@@ -12,7 +12,10 @@ from fastapi import BackgroundTasks, Response
 import logging
 from pathlib import Path
 import re
+import asyncio
 from app.langchain import service as langchain_service
+from app.service.langchain.models.chat_open_ai_with_token_count import ChatOpenAIWithTokenCount
+from starlette.concurrency import run_in_threadpool
 
 router = APIRouter(
     prefix='/langchain',
@@ -75,3 +78,21 @@ def conversate(question: Annotated[str, Form()],
 
     result = langchain_service.conversate_with_llm(session, question, files, x_conversation_id, llm, background_tasks)
     return result
+
+@router.websocket('/ws')
+async def ws_conversate(websocket: WebSocket, 
+                        background_tasks: BackgroundTasks,
+                        x_conversation_id: Annotated[Union[str, None], Header()]=None,
+                        db_session: Session = Depends(get_session_local), 
+                        llm: ChatOpenAIWithTokenCount=Depends(get_langchain_model)):
+    await websocket.accept()
+    queue = asyncio.Queue()
+    send_json = queue.put
+
+    try:
+        while True:
+            body = await websocket.receive_json()
+            result = await run_in_threadpool(langchain_service.handle_websocket_request, body, llm, background_tasks, x_conversation_id, db_session)
+            print(result)
+    except WebSocketDisconnect:
+        logger.info('Client disconnected')
