@@ -189,9 +189,9 @@ def conversate_with_llm(db_session: Session,
 
     queue = Queue()
     qa = ConversationalRetrievalChain.from_llm(
-        llm=ChatOpenAIWithTokenCount(temperature=0, verbose=True, streaming=True, callbacks=[QueueCallbackHandler(queue), PostgresCallbackHandler(session, x_conversation_id)]), 
+        llm=ChatOpenAIWithTokenCount(temperature=0, verbose=True, streaming=True, callbacks=[QueueCallbackHandler(queue), PostgresCallbackHandler(db_session, conversation_id)]), 
         retriever=db.as_retriever(search_kwargs={
-            'filter': { 'conversation_id': {"in": [os.getenv('SHARED_KNOWLEDGE_BASE_UUID'), x_conversation_id]} }
+            'filter': { 'conversation_id': {"in": [os.getenv('SHARED_KNOWLEDGE_BASE_UUID'), conversation_id]} }
         }),
         condense_question_llm=ChatOpenAIWithTokenCount(temperature=0, verbose=True, streaming=True),
         memory=memory,
