@@ -56,6 +56,7 @@ from datetime import datetime
 import re
 from langchain.document_loaders import PyMuPDFLoader
 from io import BytesIO
+import io
 import tempfile
 
 logger = logging.getLogger(__name__)
@@ -73,9 +74,12 @@ def _process_pdf_files(files: List[UploadFile], conversation_id: str) -> List[Do
         from langchain.text_splitter import CharacterTextSplitter
 
         fd, path = tempfile.mkstemp()
+        # fd, path = os.mkdir('./sample')
         try:
             with os.fdopen(fd, 'wb') as tmp:
-                tmp.write(pdf.file.read())
+                binary_bytes = pdf.file.read()
+                tmp.write(binary_bytes)
+                tmp.flush()
                 pdf.file.seek(0)
                 loader = PyMuPDFLoader(path)
                 # Attempt to parse file into docs without ocr
@@ -156,7 +160,7 @@ def upload_files(files: List[UploadFile], conversation_id: str = None):
         docs_for_vector_store.append(file)
         entity = DocumentCreate(content=Binary(file.file.read()), filename=file.filename, mime_type=file.content_type, conversation_id=conversation_id)
         file.file.seek(0)
-        create_document(entity)
+        # create_document(entity)
     
     load_document_to_vector_store(docs_for_vector_store, conversation_id)
 
@@ -291,5 +295,19 @@ def handle_websocket_request(body: Dict[str, any],
                              x_conversation_id: Annotated[str, Header()],
                              db_session: Session=Depends(get_session_local)):
     question = body['question']
-    result = conversate_with_llm(db_session, question, [], x_conversation_id, llm, background_tasks)
+    files: List[UploadFile] = []
+    if 'files' in body:
+        file_payloads = body['files']
+        # Convert file payload into UploadFile starlette objects
+        for payload in file_payloads:
+            base64_str: str = payload['base64']
+            file_bytes: bytes = base64_str.encode('utf-8')
+            file_bytes = base64.b64decode(file_bytes)
+            content_type, _ = mimetypes.guess_type(payload['filename'])
+            upload_file = UploadFile(io.BytesIO(file_bytes), size=len(file_bytes), filename=payload['filename'], headers={
+                'content-type': content_type
+            })
+            files.append(upload_file)
+            
+    result = conversate_with_llm(db_session, question, files, x_conversation_id, llm, background_tasks)
     return result

@@ -3,7 +3,6 @@ from fastapi import FastAPI
 from dotenv import load_dotenv
 from .router import langchains
 from .langchain.router import router as langchain_router
-from .langchain.ws_router import WSRoute
 import uvicorn
 import os
 from app.database.base import Base, SessionLocal, engine
