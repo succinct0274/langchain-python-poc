@@ -159,7 +159,7 @@ def upload_files(files: List[UploadFile], conversation_id: str = None):
         docs_for_vector_store.append(file)
         entity = DocumentCreate(content=Binary(file.file.read()), filename=file.filename, mime_type=file.content_type, conversation_id=conversation_id)
         file.file.seek(0)
-        # create_document(entity)
+        create_document(entity)
     
     load_document_to_vector_store(docs_for_vector_store, conversation_id)
 
