@@ -74,7 +74,6 @@ def _process_pdf_files(files: List[UploadFile], conversation_id: str) -> List[Do
         from langchain.text_splitter import CharacterTextSplitter
 
         fd, path = tempfile.mkstemp()
-        # fd, path = os.mkdir('./sample')
         try:
             with os.fdopen(fd, 'wb') as tmp:
                 binary_bytes = pdf.file.read()
