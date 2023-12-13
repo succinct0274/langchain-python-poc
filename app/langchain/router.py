@@ -86,8 +86,6 @@ async def ws_conversate(websocket: WebSocket,
                         db_session: Session = Depends(get_session_local), 
                         llm: ChatOpenAIWithTokenCount=Depends(get_langchain_model)):
     await websocket.accept()
-    queue = asyncio.Queue()
-    send_json = queue.put
 
     try:
         while True:
