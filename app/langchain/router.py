@@ -64,6 +64,7 @@ def conversate(question: Annotated[str, Form()],
                background_tasks: BackgroundTasks,
                response: Response,
                files: Annotated[List[UploadFile], File()]=[], 
+               instruction: Annotated[str | None, Form()] = None,
                x_conversation_id: Annotated[Union[str, None], Header()]=None,
                llm=Depends(get_langchain_model),
                session: Session=Depends(get_session_local)):
@@ -76,7 +77,7 @@ def conversate(question: Annotated[str, Form()],
     if x_conversation_id is None:
         x_conversation_id = str(uuid.uuid4())
 
-    result = langchain_service.conversate_with_llm(session, question, files, x_conversation_id, llm, background_tasks)
+    result = langchain_service.conversate_with_llm(session, question, files, x_conversation_id, llm, background_tasks, instruction=instruction)
     return result
 
 @router.websocket('/ws')

@@ -41,6 +41,7 @@ from app.service.langchain.agents.panda_agent import create_pandas_dataframe_age
 from app.service.langchain.models.chat_open_ai_with_token_count import ChatOpenAIWithTokenCount
 from bson import Binary
 from langchain.schema.runnable import RunnableBranch
+from langchain.prompts import SystemMessagePromptTemplate, ChatPromptTemplate, HumanMessagePromptTemplate
 from app.mongodb.crud.document import create_document, acreate_document, find_document_by_conversation_id_and_filenames, find_document_by_conversation_id
 from app.mongodb.schema.document import DocumentCreate
 from langchain.prompts import PromptTemplate
@@ -168,7 +169,8 @@ def conversate_with_llm(db_session: Session,
                         files: List[UploadFile],
                         conversation_id: str,
                         llm: ChatOpenAI,
-                        background_tasks: BackgroundTasks | None):
+                        background_tasks: BackgroundTasks | None,
+                        instruction: str | None = None):
     logger.info(f"Question: {question}")
     
     # Process files uploaded into text
@@ -192,6 +194,15 @@ def conversate_with_llm(db_session: Session,
             memory.save_context({'input': record.human_message}, {'answer': record.ai_message})
 
     queue = Queue()
+
+    additional_args = {}
+    if instruction is not None:
+        messages = [
+            SystemMessagePromptTemplate.from_template(instruction),
+            HumanMessagePromptTemplate.from_template("{question}")
+        ]
+        additional_args['prompt'] = ChatPromptTemplate.from_messages(messages)
+
     qa = ConversationalRetrievalChain.from_llm(
         llm=ChatOpenAIWithTokenCount(temperature=0, verbose=True, streaming=True, callbacks=[QueueCallbackHandler(queue), PostgresCallbackHandler(db_session, conversation_id)]), 
         retriever=db.as_retriever(search_kwargs={
@@ -201,6 +212,7 @@ def conversate_with_llm(db_session: Session,
         memory=memory,
         verbose=True,
         return_source_documents=True,
+        combine_docs_chain_kwargs=additional_args
     )
 
     df = get_xlsx_dataframes(files)
