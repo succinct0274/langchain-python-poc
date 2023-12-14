@@ -197,6 +197,7 @@ def conversate_with_llm(db_session: Session,
 
     additional_args = {}
     if instruction is not None:
+        # https://stackoverflow.com/questions/76175046/how-to-add-prompt-to-langchain-conversationalretrievalchain-chat-over-docs-with
         messages = [
             SystemMessagePromptTemplate.from_template(instruction),
             HumanMessagePromptTemplate.from_template("{question}")
