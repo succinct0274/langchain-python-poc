@@ -220,11 +220,18 @@ def conversate_with_llm(db_session: Session,
 
     chain = (
         PromptTemplate.from_template(
-            """Given the user question below, classify it as either being about `Dataframe` or `RetrievalQA`.
+            """Given the user question below, classify it as either `DataFrame` or `RetrievalQA`.
 
-            Choose `DataFrame` if the question is related to excel, csv or dataframe.
-            Choose `RetrievalQA` if the question is about general stuff or relevant to document or pdf files.
-                                        
+            - Choose `DataFrame` if the question involves:
+            - Excel files, spreadsheets, or Excel-related operations.
+            - CSV files, including reading, writing, or manipulating CSV data.
+            - DataFrames in programming languages like Python (e.g., pandas DataFrame), including operations on these structures.
+
+            - Choose `RetrievalQA` if the question is about:
+            - General knowledge or information queries.
+            - Documents or PDF files, including reading, processing, or extracting information from them.
+            - Specific non-programming document-related queries.
+
             Do not respond with more than one word.
 
             <question>
