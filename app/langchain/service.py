@@ -42,7 +42,7 @@ from app.service.langchain.models.chat_open_ai_with_token_count import ChatOpenA
 from bson import Binary
 from langchain.schema.runnable import RunnableBranch
 from langchain.prompts import SystemMessagePromptTemplate, ChatPromptTemplate, HumanMessagePromptTemplate
-from app.mongodb.crud.document import create_document, acreate_document, find_document_by_conversation_id_and_filenames, find_document_by_conversation_id
+from app.mongodb.crud.document import update_document_status_by_ids, create_document, acreate_document, find_document_by_conversation_id_and_filenames, find_document_by_conversation_id
 from app.mongodb.schema.document import DocumentCreate
 from langchain.prompts import PromptTemplate
 from langchain.schema.output_parser import StrOutputParser
@@ -114,6 +114,22 @@ def _process_pdf_files(files: List[UploadFile], conversation_id: str) -> List[Do
     
     return documents
 
+def initiate_conversation(db_session: Session):
+    sid = uuid.uuid4()
+
+    while exists_conversation_historys_by_conversation_id(db_session, sid):
+        sid = uuid.uuid4()
+
+    create_conversation_history(db_session, ConversationHistoryCreate(conversation_id=sid,
+                                                                   human_message='Hi',
+                                                                   ai_message=DEFAULT_AI_GREETING_MESSAGE,
+                                                                   greeting=True))
+    
+    return {
+        'conversation_id': sid,
+        'ai_message': DEFAULT_AI_GREETING_MESSAGE,
+    }    
+
 def get_xlsx_dataframes(files: List[UploadFile]):
     xlsx_files = [file for file in files if file.content_type == 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']
 
@@ -148,41 +164,57 @@ def find_conversation_historys(db_session: Session, conversation_id: str):
 def find_document(conversation_id: str, filenames: List[str]):
     return find_document_by_conversation_id_and_filenames(conversation_id, filenames)
 
-def upload_files(files: List[UploadFile], conversation_id: str = None):
+def upload(files: List[UploadFile], conversation_id: str = None):
     filenames = [f.filename for f in files]
     existed = find_document(conversation_id, filenames)
     existed_filenames = set([persisted.filename for persisted in existed])
-    docs_for_vector_store = []
+    res: List[Dict] = []
     for file in files:
         if file.filename in existed_filenames:
             continue
 
-        docs_for_vector_store.append(file)
         entity = DocumentCreate(content=Binary(file.file.read()), filename=file.filename, mime_type=file.content_type, conversation_id=conversation_id)
         file.file.seek(0)
-        create_document(entity)
+        grid_out = create_document(entity)
+        res.append({
+            'file_id': grid_out._id,
+            'filename': file.filename,
+            'file': file,
+        })
+
+    return res
     
-    load_document_to_vector_store(docs_for_vector_store, conversation_id)
+def upload_and_load(files: List[UploadFile], conversation_id: str = None):
+    
+    uploaded_files = upload(files, conversation_id)
+    load_document_to_vector_store([uploaded.file for uploaded in uploaded_files], conversation_id)
 
 def conversate_with_llm(db_session: Session, 
                         question: str,
                         files: List[UploadFile],
+                        metadata: List[Dict[str, any]],
                         conversation_id: str,
                         llm: ChatOpenAI,
                         background_tasks: BackgroundTasks | None,
                         instruction: str | None = None):
     logger.info(f"Question: {question}")
     
-    # Process files uploaded into text
-    file_detail = []
-    for file in files:
-        file_detail.append({'filename': file.filename, 'mime_type': file.content_type})
 
-    upload_files(files, conversation_id)
+    if metadata is None:
+        # Process files uploaded into text
+        file_detail = []
+        for file in files:
+            file_detail.append({'filename': file.filename, 'mime_type': file.content_type})
+        
+        upload_and_load(files, conversation_id)
+    else:
+        # Changed status of all uploaded files in metadata
+        update_document_status_by_ids([m['file_id'] for m in metadata], conversation_id)
 
     db = PGVector(os.getenv('SQLALCHEMY_DATABASE_URL'), 
                             embedding_function=OpenAIEmbeddings(), 
                             distance_strategy=DistanceStrategy.EUCLIDEAN,
+                            collection_name=conversation_id,
                             collection_metadata={'conversation_id': conversation_id})
 
     memory = ConversationSummaryBufferMemory(llm=llm, memory_key='chat_history', return_messages=True, verbose=True, output_key='answer')

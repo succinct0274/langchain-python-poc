@@ -7,6 +7,7 @@ class DocumentSchema(BaseModel):
     filename: str = Field()
     mime_type: str = Field()
     content: bytes = Field()
+    status: str = Field()
     conversation_id: UUID = Field()
     created_at: datetime = datetime.now()
     created_by: str | None = None
@@ -19,6 +20,7 @@ class DocumentCreate(BaseModel):
     mime_type: str
     conversation_id: str
     content: bytes
+    status: str
     created_at: datetime = datetime.now()
     created_by: str | None = None
     updated_at: datetime = datetime.now()

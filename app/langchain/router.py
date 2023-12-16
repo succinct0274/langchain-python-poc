@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, WebSocketDisconnect
-from typing import Annotated, List, Union, Optional
+from typing import Annotated, List, Union, Optional, Dict
 from uuid import UUID
 from fastapi import FastAPI, Form, UploadFile, File, HTTPException, Header, Path, WebSocket
 from app.service.langchain.model import get_langchain_model
@@ -16,6 +16,7 @@ import asyncio
 from app.langchain import service as langchain_service
 from app.service.langchain.models.chat_open_ai_with_token_count import ChatOpenAIWithTokenCount
 from starlette.concurrency import run_in_threadpool
+import datetime
 
 router = APIRouter(
     prefix='/langchain',
@@ -28,6 +29,10 @@ SHARED_CONVERSATION_ID = os.getenv('SHARED_KNOWLEDGE_BASE_UUID')
 UUID_PATTERN = re.compile(r'^[\da-f]{8}-([\da-f]{4}-){3}[\da-f]{12}$', re.IGNORECASE)
 DEFAULT_AI_GREETING_MESSAGE = 'Hi there, how can I help you?'
 SUPPORTED_DOCUMENT_TYPES = set(['application/pdf', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'])
+
+@router.post('/session/init')
+async def init_session(session: Session=Depends(get_session_local)):
+    return langchain_service.initiate_conversation(session)
 
 @router.get('/conversate')
 async def find_conversation(x_conversation_id: Annotated[str, Header()],
@@ -55,14 +60,48 @@ def upload(files: Annotated[List[UploadFile], File()],
         raise HTTPException(status_code=400, detail='Unsupported document type')
     
     # Upload files to mongodb
-    langchain_service.upload_files(files, x_conversation_id)
+    langchain_service.upload_and_load(files, x_conversation_id)
 
     response.headers['X-Conversation-Id'] = x_conversation_id
+
+@router.get('/{conversation_id}/files')
+def find_files_by_conversation_id(conversation_id: Annotated[UUID, Path(title="The conversation id for session")]):
+    files = langchain_service.find_document_by_conversation_id(conversation_id)
+    res = []
+    for file in files:
+        res.append({
+            'filename': file.filename,
+            'upload_date': int(datetime.timestamp(file.upload_date)) * 1000,
+            'content_type': file.metadata['mime_type']
+        })
+
+    return res
+
+@router.post('/{conversation_id}/files')
+def upload_files_by_conversation_id(conversation_id: Annotated[UUID, Path(title="The conversation id for session")],
+                                    files: Annotated[List[UploadFile], File()],
+                                    llm=Depends(get_langchain_model),
+                                    session: Session=Depends(get_session_local)):
+    content_types = set([file.content_type for file in files])
+    supported = content_types.issubset(SUPPORTED_DOCUMENT_TYPES)
+    if not supported:
+        raise HTTPException(status_code=400, detail='Unsupported document type')
+    
+    # Upload files to mongodb
+    uploaded = langchain_service.upload(files, conversation_id)
+    res = []
+    for record in uploaded:
+        res.append({
+            'file_id': record['file_id'],
+            'filename': record['filename'],
+        })
+    return res
 
 @router.post('/conversate')
 def conversate(question: Annotated[str, Form()], 
                background_tasks: BackgroundTasks,
                response: Response,
+               metadata: Annotated[List[Dict] | None, Form()]=None,
                files: Annotated[List[UploadFile], File()]=[], 
                instruction: Annotated[str | None, Form()] = None,
                x_conversation_id: Annotated[Union[str, None], Header()]=None,
@@ -77,7 +116,7 @@ def conversate(question: Annotated[str, Form()],
     if x_conversation_id is None:
         x_conversation_id = str(uuid.uuid4())
 
-    result = langchain_service.conversate_with_llm(session, question, files, x_conversation_id, llm, background_tasks, instruction=instruction)
+    result = langchain_service.conversate_with_llm(session, question, files, metadata, x_conversation_id, llm, background_tasks, instruction=instruction)
     return result
 
 @router.websocket('/ws')

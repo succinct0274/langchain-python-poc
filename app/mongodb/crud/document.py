@@ -1,4 +1,4 @@
-from app.mongodb.base import async_db, async_client, fs
+from app.mongodb.base import async_db, async_client, fs, db
 from pymongo.results import InsertOneResult
 from app.mongodb.schema.document import DocumentCreate, DocumentSchema
 from pymongo.collection import Collection
@@ -10,6 +10,10 @@ from motor.motor_asyncio import AsyncIOMotorCursor, AsyncIOMotorGridFSBucket
 from uuid import UUID
 
 document_collection: Collection = async_db.get_collection('user_document_collection')
+
+def update_document_status_by_ids(ids: List[str], status: str):
+    collection = db.get_collection('fs.files')
+    collection.update_many({'_id': { '$in': ids}}, {'$set': { 'status': 'success' }})
 
 def create_document(doc: DocumentCreate):
     persisted = fs.put(doc.content, filename=doc.filename, metadata={'mime_type': doc.mime_type, 'conversation_id': doc.conversation_id})
