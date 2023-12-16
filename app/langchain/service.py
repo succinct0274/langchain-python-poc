@@ -43,6 +43,7 @@ from bson import Binary
 from langchain.schema.runnable import RunnableBranch
 from langchain.prompts import SystemMessagePromptTemplate, ChatPromptTemplate, HumanMessagePromptTemplate
 from app.mongodb.crud.document import update_document_status_by_ids, create_document, acreate_document, find_document_by_conversation_id_and_filenames, find_document_by_conversation_id
+import app.mongodb.crud.document as mongodb_service
 from app.mongodb.schema.document import DocumentCreate
 from langchain.prompts import PromptTemplate
 from langchain.schema.output_parser import StrOutputParser
@@ -154,6 +155,7 @@ def load_document_to_vector_store(files: List[UploadFile], conversation_id: str)
     db = PGVector(os.getenv('SQLALCHEMY_DATABASE_URL'), 
                               embedding_function=OpenAIEmbeddings(), 
                               distance_strategy=DistanceStrategy.EUCLIDEAN,
+                              collection_name=conversation_id,
                               collection_metadata={'conversation_id': conversation_id})
     
     db.add_documents(documents)
@@ -173,13 +175,15 @@ def upload(files: List[UploadFile], conversation_id: str = None):
         if file.filename in existed_filenames:
             continue
 
-        entity = DocumentCreate(content=Binary(file.file.read()), filename=file.filename, mime_type=file.content_type, conversation_id=conversation_id)
+        status = 'uploaded'
+        entity = DocumentCreate(content=Binary(file.file.read()), filename=file.filename, mime_type=file.content_type, conversation_id=conversation_id, status=status)
         file.file.seek(0)
         grid_out = create_document(entity)
         res.append({
-            'file_id': grid_out._id,
+            'file_id': str(grid_out._id),
             'filename': file.filename,
             'file': file,
+            'status': 'uploaded'
         })
 
     return res
@@ -192,7 +196,7 @@ def upload_and_load(files: List[UploadFile], conversation_id: str = None):
 def conversate_with_llm(db_session: Session, 
                         question: str,
                         files: List[UploadFile],
-                        metadata: List[Dict[str, any]],
+                        metadata: Dict[str, any],
                         conversation_id: str,
                         llm: ChatOpenAI,
                         background_tasks: BackgroundTasks | None,
@@ -200,16 +204,34 @@ def conversate_with_llm(db_session: Session,
     logger.info(f"Question: {question}")
     
 
-    if metadata is None:
+    file_detail = []
+    if metadata is None or 'attachment' not in metadata:
         # Process files uploaded into text
-        file_detail = []
         for file in files:
             file_detail.append({'filename': file.filename, 'mime_type': file.content_type})
         
         upload_and_load(files, conversation_id)
     else:
         # Changed status of all uploaded files in metadata
-        update_document_status_by_ids([m['file_id'] for m in metadata], conversation_id)
+        attachments = metadata['attachment']
+        file_ids = []
+        for attachment in attachments:
+            file_ids.append(attachment['file_id'])
+            file_detail.append({'filename': attachment['filename'], 'mime_type': attachment['content_type']})
+
+        update_document_status_by_ids(file_ids, conversation_id)
+
+        # Find all documents specified in metadata
+        file_with_details = mongodb_service.find_binary_document_by_file_ids(file_ids)
+        files = []
+        for file in file_with_details:
+            upload_file = UploadFile(io.BytesIO(file['data']), 
+                                     size=len(file['data']), 
+                                     filename=file['filename'], 
+                                     headers={'content-type': file['content_type']}) 
+            files.append(upload_file)
+            
+        load_document_to_vector_store(files, conversation_id)
 
     db = PGVector(os.getenv('SQLALCHEMY_DATABASE_URL'), 
                             embedding_function=OpenAIEmbeddings(), 

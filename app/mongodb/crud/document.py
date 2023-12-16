@@ -8,6 +8,7 @@ from pymongo import MongoClient
 from gridfs.grid_file import GridOut
 from motor.motor_asyncio import AsyncIOMotorCursor, AsyncIOMotorGridFSBucket
 from uuid import UUID
+from bson.objectid import ObjectId
 
 document_collection: Collection = async_db.get_collection('user_document_collection')
 
@@ -15,7 +16,20 @@ def update_document_status_by_ids(ids: List[str], status: str):
     collection = db.get_collection('fs.files')
     collection.update_many({'_id': { '$in': ids}}, {'$set': { 'status': 'success' }})
 
-def create_document(doc: DocumentCreate):
+def find_binary_document_by_file_ids(file_ids: List[str]):
+    binary_files = []
+    for file_id in file_ids:
+        grid_out = fs.find_one({'_id': ObjectId(file_id)})
+        binary_files.append({
+            'id': file_id,
+            'filename': grid_out.filename,
+            'content_type': grid_out.metadata['mime_type'],
+            'data': grid_out.read()
+        })
+    
+    return binary_files
+
+def create_document(doc: DocumentCreate) -> GridOut:
     persisted = fs.put(doc.content, filename=doc.filename, metadata={'mime_type': doc.mime_type, 'conversation_id': doc.conversation_id})
     grid_out = fs.find_one({"_id": persisted})
     return grid_out

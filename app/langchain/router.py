@@ -17,11 +17,17 @@ from app.langchain import service as langchain_service
 from app.service.langchain.models.chat_open_ai_with_token_count import ChatOpenAIWithTokenCount
 from starlette.concurrency import run_in_threadpool
 import datetime
+from pydantic import BaseModel
 
 router = APIRouter(
     prefix='/langchain',
     tags=['langchain'],
 )
+
+class ConversationRequest(BaseModel):
+    question: str
+    instruction: str | None = None
+    metadata: Dict | None = None
 
 logger = logging.getLogger(__name__)
 
@@ -88,35 +94,38 @@ def upload_files_by_conversation_id(conversation_id: Annotated[UUID, Path(title=
         raise HTTPException(status_code=400, detail='Unsupported document type')
     
     # Upload files to mongodb
-    uploaded = langchain_service.upload(files, conversation_id)
+    uploaded = langchain_service.upload(files, str(conversation_id))
     res = []
     for record in uploaded:
         res.append({
             'file_id': record['file_id'],
             'filename': record['filename'],
+            'status': 'uploaded'
         })
     return res
 
 @router.post('/conversate')
-def conversate(question: Annotated[str, Form()], 
-               background_tasks: BackgroundTasks,
+def conversate(background_tasks: BackgroundTasks,
                response: Response,
-               metadata: Annotated[List[Dict] | None, Form()]=None,
-               files: Annotated[List[UploadFile], File()]=[], 
-               instruction: Annotated[str | None, Form()] = None,
+               form_data: ConversationRequest, 
                x_conversation_id: Annotated[Union[str, None], Header()]=None,
                llm=Depends(get_langchain_model),
                session: Session=Depends(get_session_local)):
-    content_types = set([file.content_type for file in files])
-    supported = content_types.issubset(SUPPORTED_DOCUMENT_TYPES)
-    if not supported:
-            raise HTTPException(status_code=400, detail='Unsupported document type')
+    instruction = form_data.instruction
+    question = form_data.question
+    metadata = form_data.metadata
+
+    if 'attachment' in metadata:
+        content_types = set([file['content_type'] for file in metadata['attachment']])
+        supported = content_types.issubset(SUPPORTED_DOCUMENT_TYPES)
+        if not supported:
+                raise HTTPException(status_code=400, detail='Unsupported document type')
     
     # Generate session id for embedding and chat history store
     if x_conversation_id is None:
         x_conversation_id = str(uuid.uuid4())
 
-    result = langchain_service.conversate_with_llm(session, question, files, metadata, x_conversation_id, llm, background_tasks, instruction=instruction)
+    result = langchain_service.conversate_with_llm(session, question, [], metadata, x_conversation_id, llm, background_tasks, instruction=instruction)
     return result
 
 @router.websocket('/ws')
