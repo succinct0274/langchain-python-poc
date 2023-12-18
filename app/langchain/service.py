@@ -192,7 +192,7 @@ def upload(files: List[UploadFile], conversation_id: str = None):
 def upload_and_load(files: List[UploadFile], conversation_id: str = None):
     
     uploaded_files = upload(files, conversation_id)
-    load_document_to_vector_store([uploaded.file for uploaded in uploaded_files], conversation_id)
+    load_document_to_vector_store([uploaded['file'] for uploaded in uploaded_files], conversation_id)
 
 def conversate_with_llm(db_session: Session, 
                         question: str,
