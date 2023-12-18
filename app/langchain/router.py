@@ -16,7 +16,7 @@ import asyncio
 from app.langchain import service as langchain_service
 from app.service.langchain.models.chat_open_ai_with_token_count import ChatOpenAIWithTokenCount
 from starlette.concurrency import run_in_threadpool
-import datetime
+from datetime import datetime
 from pydantic import BaseModel
 
 router = APIRouter(
