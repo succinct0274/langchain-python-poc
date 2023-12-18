@@ -182,6 +182,7 @@ def upload(files: List[UploadFile], conversation_id: str = None):
         res.append({
             'file_id': str(grid_out._id),
             'filename': file.filename,
+            'content_type': file.content_type,
             'file': file,
             'status': 'uploaded'
         })

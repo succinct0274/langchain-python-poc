@@ -76,6 +76,7 @@ def find_files_by_conversation_id(conversation_id: Annotated[UUID, Path(title="T
     res = []
     for file in files:
         res.append({
+            'file_id': str(file._id),
             'filename': file.filename,
             'upload_date': int(datetime.timestamp(file.upload_date)) * 1000,
             'content_type': file.metadata['mime_type']
@@ -100,6 +101,7 @@ def upload_files_by_conversation_id(conversation_id: Annotated[UUID, Path(title=
         res.append({
             'file_id': record['file_id'],
             'filename': record['filename'],
+            'content_type': record['content_type'],
             'status': 'uploaded'
         })
     return res
