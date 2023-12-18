@@ -277,18 +277,22 @@ def conversate_with_llm(db_session: Session,
         PromptTemplate.from_template(
             """Given the user question below, classify it as either `DataFrame` or `RetrievalQA`.
 
-            - Choose `DataFrame` if the question involves:
-            - Excel files, spreadsheets, or Excel-related operations.
-            - CSV files, including reading, writing, or manipulating CSV data.
-            - DataFrames in programming languages like Python (e.g., pandas DataFrame), including operations on these structures.
+            - Choose `DataFrame` if the question involves any of the following:
+            - Operations related to Excel files or spreadsheets, including but not limited to creating, editing, or analyzing Excel data.
+            - Interactions with CSV files, which may involve reading, writing, modifying, or manipulating CSV data in any form.
+            - Questions about DataFrames in programming languages, particularly Python (e.g., pandas DataFrame). This includes creating, manipulating, analyzing, or any operations specific to these data structures.
 
-            - Choose `RetrievalQA` if the question is about:
-            - General knowledge or information queries.
-            - Documents or PDF files, including reading, processing, or extracting information from them.
-            - Specific non-programming document-related queries.
+            - Choose `RetrievalQA` if the question pertains to:
+            - General knowledge or information queries that do not explicitly involve programming or data manipulation.
+            - Queries about documents or PDF files, including reading, processing, extracting, or interpreting information from these formats.
+            - Specific questions related to non-programming aspects of document handling or information retrieval.
 
-            Do not respond with more than one word.
+            - Guidelines for Classification:
+            - Ensure the classification is based on the main focus of the question.
+            - If a question overlaps between categories but has a clear primary focus, classify according to the primary focus.
+            - Do not respond with more than one word to maintain clarity.
 
+            User Question:
             <question>
             {question}
             </question>

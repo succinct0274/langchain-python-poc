@@ -117,7 +117,7 @@ def conversate(background_tasks: BackgroundTasks,
     question = form_data.question
     metadata = form_data.metadata
 
-    if 'attachment' in metadata:
+    if metadata is not None and 'attachment' in metadata:
         content_types = set([file['content_type'] for file in metadata['attachment']])
         supported = content_types.issubset(SUPPORTED_DOCUMENT_TYPES)
         if not supported:
