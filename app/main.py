@@ -49,10 +49,10 @@ app.add_middleware(
 app.include_router(langchains.router)
 app.include_router(langchain_router)
 
-@app.get("/")
-def read_root():
-    print(os.environ['OPENAI_API_KEY'])
-    return {"Hello": "World"}
+# @app.get("/")
+# def read_root():
+#     print(os.environ['OPENAI_API_KEY'])
+#     return {"Hello": "World"}
 
 
 @app.get("/items/{item_id}")
