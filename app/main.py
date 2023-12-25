@@ -7,6 +7,7 @@ import uvicorn
 import os
 from app.database.base import Base, SessionLocal, engine
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 import logging
 import logging.config
 import yaml
@@ -24,7 +25,14 @@ import logging
 logging.basicConfig()
 logging.getLogger('sqlalchemy.engine').setLevel(logging.INFO)
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    from llama_index import download_loader
+    download_loader("PyMuPDFReader", refresh_cache=False)
+    yield
+
+app = FastAPI(lifespan=lifespan)
 
 origins = [
     'http://localhost',

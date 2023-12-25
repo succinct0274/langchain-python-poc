@@ -21,6 +21,7 @@ contourpy==1.2.0
 cycler==0.12.1
 dataclasses-json==0.6.1
 Deprecated==1.2.14
+distro==1.9.0
 dnspython==2.4.2
 email-validator==2.1.0.post1
 emoji==2.8.0
@@ -54,9 +55,12 @@ jsonpointer==2.4
 kiwisolver==1.4.5
 kubernetes==28.1.0
 langchain==0.0.329
+langchain-community==0.0.5
+langchain-core==0.1.2
 langchain-experimental==0.0.37
 langdetect==1.0.9
-langsmith==0.0.56
+langsmith==0.0.72
+llama-index==0.9.21
 lxml==4.9.3
 MarkupSafe==2.1.3
 marshmallow==3.20.1
@@ -66,13 +70,14 @@ motor==3.3.1
 mpmath==1.3.0
 multidict==6.0.4
 mypy-extensions==1.0.0
+nest-asyncio==1.5.8
 networkx==3.2.1
 nltk==3.8.1
 numexpr==2.8.7
 numpy==1.26.1
 oauthlib==3.2.2
 onnxruntime==1.16.1
-openai==0.28.1
+openai==1.6.1
 opencv-python==4.8.1.78
 openpyxl==3.1.2
 opentelemetry-api==1.20.0

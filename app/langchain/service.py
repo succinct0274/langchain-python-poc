@@ -60,6 +60,7 @@ from langchain.document_loaders import PyMuPDFLoader
 from io import BytesIO
 import io
 import tempfile
+from llama_index import Document as LlamaIndexDocument
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,33 @@ UUID_PATTERN = re.compile(r'^[\da-f]{8}-([\da-f]{4}-){3}[\da-f]{12}$', re.IGNORE
 DEFAULT_AI_GREETING_MESSAGE = 'Hi there, how can I help you?'
 SUPPORTED_DOCUMENT_TYPES = set(['application/pdf', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'])
 
+def _process_pdf_files_with_llamaindex(files: List[UploadFile], conversation_id: str):
+    
+    documents: List[LlamaIndexDocument] = []
+    pdf_files = [file for file in files if file.content_type == 'application/pdf']
+
+    for pdf in pdf_files:
+        fd, path = tempfile.mkstemp()
+        try:
+            with os.fdopen(fd, 'wb') as tmp:
+                binary_bytes = pdf.file.read()
+                tmp.write(binary_bytes)
+                tmp.flush()
+                pdf.file.seek(0)
+
+                from llama_index import download_loader
+                PyMuPDFReader = download_loader("PyMuPDFReader")
+                loader = PyMuPDFReader()
+                docs = loader.load_data(path)
+
+                for doc in docs:
+                    doc.metadata['conversation_id'] = conversation_id
+                    
+                documents.extend(docs)
+        finally:
+            os.remove(path)
+
+    return documents
 
 def _process_pdf_files(files: List[UploadFile], conversation_id: str) -> List[Document]:
     documents = []
@@ -139,6 +167,26 @@ def get_xlsx_dataframes(files: List[UploadFile]):
 
     dataframes = [pd.read_excel(excel.file) for excel in xlsx_files]
     return dataframes
+
+def load_document_to_vector_store_with_llamaindex(files: List[UploadFile], conversation_id: str):
+    from langchain_community.retrievers.llama_index import LlamaIndexRetriever
+    from llama_index.indices.vector_store import VectorStoreIndex
+    from llama_index.vector_stores import PGVectorStore
+    from app.langchain.llama_tools import LlamaIndexPgVectorStore
+    from llama_index.storage import StorageContext
+
+    # Load documents
+    documents = _process_pdf_files_with_llamaindex(files, conversation_id) 
+
+    # Create vector store, thereby storage context
+    vector_store = LlamaIndexPgVectorStore()
+    storage_context = StorageContext.from_defaults(vector_store=vector_store)
+    
+    index = VectorStoreIndex.from_documents(documents, storage_context=storage_context, show_progress=True)
+    
+    retriever = LlamaIndexRetriever(index=index)
+    
+    pass
 
 def load_document_to_vector_store(files: List[UploadFile], conversation_id: str):
     documents = _process_pdf_files(files, conversation_id)
@@ -232,6 +280,7 @@ def conversate_with_llm(db_session: Session,
                                      headers={'content-type': file['content_type']}) 
             files.append(upload_file)
             
+        load_document_to_vector_store_with_llamaindex(files, conversation_id)
         load_document_to_vector_store(files, conversation_id)
 
     db = PGVector(os.getenv('SQLALCHEMY_DATABASE_URL'), 
