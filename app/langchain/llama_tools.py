@@ -38,9 +38,9 @@ class LlamaIndexRetriever(BaseRetriever):
         # parse source nodes
         docs = []
         for source_node in response.source_nodes:
-            metadata = source_node.extra_info or {}
+            metadata = source_node.metadata or {}
             docs.append(
-                Document(page_content=source_node.source_text, metadata=metadata)
+                Document(page_content=source_node.text, metadata=metadata)
             )
         return docs
 # Singleton pg vector store

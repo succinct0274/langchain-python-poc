@@ -405,6 +405,13 @@ def conversate_with_llm(db_session: Session,
     full_chain = {"topic": chain, "question": lambda x: x["question"]} | branch
     answer = full_chain.invoke({'question': question})
 
+    import logging
+    import sys
+
+    # Uncomment to see debug logs
+    logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
+    logging.getLogger().addHandler(logging.StreamHandler(stream=sys.stdout))
+
     logger.info(f"Answer : {answer}")
 
     res = { 'text': answer }
