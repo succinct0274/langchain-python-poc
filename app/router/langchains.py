@@ -26,7 +26,6 @@ from sqlalchemy.orm import Session
 from fastapi import BackgroundTasks, Response
 import logging
 from langchain.vectorstores.pgvector import PGVector, DistanceStrategy
-from app.service.langchain.vectorstore.pgvector import PGVectorWithMetadata
 from app.service.langchain.callbacks.postgres_callback_handler import PostgresCallbackHandler
 from sse_starlette import EventSourceResponse
 from app.service.langchain.callbacks.queue_callback_handler import QueueCallbackHandler

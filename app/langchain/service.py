@@ -26,7 +26,6 @@ from sqlalchemy.orm import Session
 from fastapi import BackgroundTasks, Response
 import logging
 from langchain.vectorstores.pgvector import PGVector, DistanceStrategy
-from app.service.langchain.vectorstore.pgvector import PGVectorWithMetadata
 from app.service.langchain.callbacks.postgres_callback_handler import PostgresCallbackHandler
 from sse_starlette import EventSourceResponse
 from app.service.langchain.callbacks.queue_callback_handler import QueueCallbackHandler
@@ -61,12 +60,19 @@ from io import BytesIO
 import io
 import tempfile
 from llama_index import Document as LlamaIndexDocument
+from app.langchain.llama_tools import LlamaIndexRetriever
+from llama_index.indices.vector_store import VectorStoreIndex
+from app.langchain.llama_tools import LlamaIndexPgVectorStore
+from llama_index.storage import StorageContext
+from llama_index.vector_stores.types import MetadataFilters, MetadataFilter, FilterCondition, FilterOperator
+
 
 logger = logging.getLogger(__name__)
 
 UUID_PATTERN = re.compile(r'^[\da-f]{8}-([\da-f]{4}-){3}[\da-f]{12}$', re.IGNORECASE)
 DEFAULT_AI_GREETING_MESSAGE = 'Hi there, how can I help you?'
 SUPPORTED_DOCUMENT_TYPES = set(['application/pdf', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'])
+SHARED_CONVERSATION_ID = os.getenv('SHARED_KNOWLEDGE_BASE_UUID')
 
 def _process_pdf_files_with_llamaindex(files: List[UploadFile], conversation_id: str):
     
@@ -89,7 +95,7 @@ def _process_pdf_files_with_llamaindex(files: List[UploadFile], conversation_id:
 
                 for doc in docs:
                     doc.metadata['conversation_id'] = conversation_id
-                    
+
                 documents.extend(docs)
         finally:
             os.remove(path)
@@ -168,25 +174,22 @@ def get_xlsx_dataframes(files: List[UploadFile]):
     dataframes = [pd.read_excel(excel.file) for excel in xlsx_files]
     return dataframes
 
-def load_document_to_vector_store_with_llamaindex(files: List[UploadFile], conversation_id: str):
-    from langchain_community.retrievers.llama_index import LlamaIndexRetriever
-    from llama_index.indices.vector_store import VectorStoreIndex
-    from llama_index.vector_stores import PGVectorStore
-    from app.langchain.llama_tools import LlamaIndexPgVectorStore
-    from llama_index.storage import StorageContext
-
+def load_document_to_vector_store_with_llamaindex(files: List[UploadFile], conversation_id: str) -> LlamaIndexRetriever:
     # Load documents
     documents = _process_pdf_files_with_llamaindex(files, conversation_id) 
 
     # Create vector store, thereby storage context
     vector_store = LlamaIndexPgVectorStore()
     storage_context = StorageContext.from_defaults(vector_store=vector_store)
-    
+
     index = VectorStoreIndex.from_documents(documents, storage_context=storage_context, show_progress=True)
+    retriever = LlamaIndexRetriever(index=index, 
+                                    query_kwargs={
+                                        'filters': MetadataFilters(filters=[MetadataFilter(key='conversation_id', value=conversation_id),
+                                                                            MetadataFilter(key='conversation_id', value=SHARED_CONVERSATION_ID)])
+                                    })
     
-    retriever = LlamaIndexRetriever(index=index)
-    
-    pass
+    return retriever
 
 def load_document_to_vector_store(files: List[UploadFile], conversation_id: str):
     documents = _process_pdf_files(files, conversation_id)
@@ -308,11 +311,23 @@ def conversate_with_llm(db_session: Session,
         ]
         additional_args['prompt'] = ChatPromptTemplate.from_messages(messages)
 
+    # Cosntruct retriever from llamaindex
+    vector_store = LlamaIndexPgVectorStore()
+    index = VectorStoreIndex.from_vector_store(vector_store=vector_store)
+    retriever = LlamaIndexRetriever(index=index, 
+                                query_kwargs={
+                                    'filters': MetadataFilters(filters=[
+                                        MetadataFilter(key='conversation_id', value=conversation_id),
+                                        MetadataFilter(key='conversation_id', value=SHARED_CONVERSATION_ID)
+                                    ], condition=FilterCondition.OR)
+                                })
+
     qa = ConversationalRetrievalChain.from_llm(
         llm=ChatOpenAIWithTokenCount(temperature=0, verbose=True, streaming=True, callbacks=[QueueCallbackHandler(queue), PostgresCallbackHandler(db_session, conversation_id)]), 
-        retriever=db.as_retriever(search_kwargs={
-            'filter': { 'conversation_id': {"in": [os.getenv('SHARED_KNOWLEDGE_BASE_UUID'), conversation_id]} }
-        }),
+        retriever=retriever,
+        # retriever=db.as_retriever(search_kwargs={
+        #     'filter': { 'conversation_id': {"in": [os.getenv('SHARED_KNOWLEDGE_BASE_UUID'), conversation_id]} }
+        # }),
         condense_question_llm=ChatOpenAIWithTokenCount(temperature=0, verbose=True, streaming=True),
         memory=memory,
         verbose=True,
